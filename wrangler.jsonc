@@ -29,8 +29,8 @@
     }
   ],
   "vars": {
-    "APP_ORIGIN": "https://rsvp-plataforma.jbrito-artesdigital.workers.dev",
-    "RP_ID": "rsvp-plataforma.jbrito-artesdigital.workers.dev",
+    "APP_ORIGIN": "https://app.presencaconfirmada.com.br",
+    "RP_ID": "app.presencaconfirmada.com.br",
     "MONTHLY_CENTS": "2990",
     "CREDIT_1_CENTS": "1490",
     "CREDIT_5_CENTS": "6490",
