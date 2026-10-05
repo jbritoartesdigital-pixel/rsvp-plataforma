@@ -59,10 +59,10 @@ CREATE TABLE events (
 );
 -- Allocation and debit run inside the event INSERT transaction: no read-then-debit race.
 CREATE TRIGGER event_entitlement BEFORE INSERT ON events BEGIN
- SELECT CASE WHEN NOT EXISTS (
+ SELECT (CASE WHEN NOT EXISTS (
   SELECT 1 FROM studios WHERE id = NEW.studio_id AND status = 'active' AND
   ((billing_mode = 'credits' AND credits >= 1) OR (billing_mode = 'monthly' AND monthly_until > NEW.created_at))
- ) THEN RAISE(ABORT,'NO_ENTITLEMENT') END;
+ ) THEN RAISE(ABORT,'NO_ENTITLEMENT') END);
 END;
 CREATE TRIGGER event_debit AFTER INSERT ON events
 WHEN (SELECT billing_mode FROM studios WHERE id = NEW.studio_id) = 'credits' BEGIN
