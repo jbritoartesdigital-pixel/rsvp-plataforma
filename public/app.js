@@ -162,7 +162,7 @@ async function newEvent(){
 
 async function eventPage(eventId){
  const {event:e}=await api(`/api/events/${eventId}`),{guests}=await api(`/api/events/${eventId}/guests`),base=`/api/events/${eventId}`,confirmed=guests.filter(g=>g.response_status==='yes');
- const link=`/${user.studio.slug}/${e.slug}`,appearance=JSON.parse(e.appearance||'{}');
+ const link=`/${user.studio.slug}/${e.slug}`,appearance=JSON.parse(e.appearance||'{}'),studioBrand=JSON.parse(user.studio.brand||'{}');
  const confirmedPeople=confirmed.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes').length,0);
  const pending=guests.filter(g=>g.response_status==='pending').length;
  const guestRows=guests.map(g=>`<article class="guest-row" data-name="${escape((g.name+' '+g.members.map(m=>m.name).join(' ')).toLowerCase())}">
@@ -182,7 +182,7 @@ async function eventPage(eventId){
   </div>
   <aside class="workspace-side">
    <details class="management-card" open><summary>Detalhes do evento</summary><div class="management-body">${form('settings',eventFields(e),'Salvar alterações')}</div></details>
-   <details class="management-card"><summary>Visual e mensagem</summary><div class="management-body">${form('appearance',field('color','Cor principal','color',appearance.color||'#a66f73')+`<input type="hidden" name="background" value="${escape(appearance.background||'')}">`+`<label><span class="field-label">Mensagem de boas-vindas</span><textarea name="welcome_message" placeholder="Escreva uma mensagem curta para os convidados.">${escape(e.welcome_message)}</textarea></label>`,'Salvar visual')}<label class="upload-box"><span>Imagem de fundo · opcional</span><input id="upload" type="file" accept="image/jpeg,image/png,image/webp,image/avif"><small>JPG, PNG, WebP ou AVIF. Até 20 MB.</small></label><p id="media-result" class="field-hint"></p></div></details>
+   <details class="management-card"><summary>Visual e mensagem</summary><div class="management-body">${form('appearance',field('color','Cor principal','color',appearance.color||studioBrand.color||'#a66f73')+`<input type="hidden" name="background" value="${escape(appearance.background||'')}">`+`<label><span class="field-label">Mensagem de boas-vindas</span><textarea name="welcome_message" placeholder="Escreva uma mensagem curta para os convidados.">${escape(e.welcome_message)}</textarea></label>`,'Salvar visual')}<label class="upload-box"><span>Imagem de fundo · opcional</span><input id="upload" type="file" accept="image/jpeg,image/png,image/webp,image/avif"><small>JPG, PNG, WebP ou AVIF. Até 20 MB.</small></label><p id="media-result" class="field-hint"></p></div></details>
    <details class="management-card"><summary>Acesso do cliente</summary><div class="management-body"><p class="muted">Este link privado permite que seu cliente acompanhe a lista sem acessar sua conta profissional.</p>${form('client','<label class="check-label"><input type="checkbox" name="manage_guests"> <span>Permitir que o cliente altere respostas</span></label>','Gerar novo link')}<p id="client-result" class="client-link"><a href="/cliente/${encodeURIComponent(e.client_token)}" target="_blank" rel="noopener">Abrir painel atual do cliente</a></p></div></details>
   </aside>
  </section>`;
