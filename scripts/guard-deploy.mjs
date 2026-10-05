@@ -6,4 +6,5 @@ if(c.vars.APP_ORIGIN!=='https://app.presencaconfirmada.com.br'||c.vars.RP_ID!=='
 if(new URL(c.vars.APP_ORIGIN).hostname!==c.vars.RP_ID) throw Error('RP_ID deve corresponder ao domínio.');
 for(const n of [1,5,10]) if(!Number.isInteger(Number(c.vars[`CREDIT_${n}_CENTS`]))||Number(c.vars[`CREDIT_${n}_CENTS`])<=0) throw Error(`Configure preço do pacote de ${n} créditos.`);
 if(!c.vars.MP_COLLECTOR_ID) throw Error('Configure o ID da conta recebedora Mercado Pago.');
+for(const secret of ['MP_ACCESS_TOKEN','MP_WEBHOOK_SECRET','TURNSTILE_SECRET','MAILER_TOKEN']) if(secret in c.vars) throw Error(`${secret} não pode ficar no wrangler.jsonc.`);
 console.log('Destino comercial validado.');
