@@ -61,14 +61,7 @@
           "binding": "MEDIA",
           "bucket_name": "rsvp-plataforma-hml-media"
         }
-      ],
-      "secrets": {
-        "required": [
-          "MP_ACCESS_TOKEN",
-          "MP_COLLECTOR_ID",
-          "MP_WEBHOOK_SECRET"
-        ]
-      }
+      ]
     }
   }
 }
