@@ -32,7 +32,19 @@ pnpm exec wrangler secret put MP_ACCESS_TOKEN
 pnpm exec wrangler secret put MP_WEBHOOK_SECRET
 ```
 
+### Turnstile opcional
+
+O RSVP público suporta Cloudflare Turnstile por evento/ambiente. Quando quiser ativar, configure `TURNSTILE_SITEKEY` como variável não secreta do Worker e salve `TURNSTILE_SECRET` como secret:
+
+```sh
+pnpm exec wrangler secret put TURNSTILE_SECRET
+```
+
+Sem `TURNSTILE_SECRET`, nenhuma confirmação exige o desafio. O navegador só carrega o script do Turnstile quando o evento recebe uma `TURNSTILE_SITEKEY`. Nunca coloque `TURNSTILE_SECRET` no `wrangler.jsonc`.
+
 Para recuperação automática por e-mail, acrescente `MAILER_URL` e `MAILER_TOKEN`. Use um serviço HTTPS que aceite POST JSON `{to,subject,text}` e autorização Bearer. Os dados de acesso não devem aparecer no repositório.
+
+Antes de publicar, a Action **Validar plataforma sem publicar** pode ser executada manualmente. Ela roda sintaxe, testes, build, migrations D1 locais e `wrangler deploy --dry-run`, sem secrets e sem tocar em recursos remotos.
 
 No GitHub, crie o environment `commercial` e os secrets `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`. O token precisa de acesso ao Worker, D1 e R2 comerciais. Depois de preencher a configuração, faça commit e execute manualmente **Publicar plataforma comercial** na aba Actions. As migrations rodam antes do Worker. Um erro de teste ou migration interrompe o deploy.
 
