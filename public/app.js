@@ -254,142 +254,267 @@ async function authPage(path){
  click('passkey-login',async()=>{const x=await api('/api/passkeys/authenticate/options','POST',{});const response=await startAuthentication({optionsJSON:x.options});await api('/api/passkeys/authenticate/verify','POST',{challenge_id:x.challenge_id,response});goto('/app');});
 }
 
+const PUBLIC_TEXTS={
+ 'pt-BR':{
+  eyebrow:'Confirmação de presença',
+  intro:'Confirme sua presença para que tudo seja preparado com carinho.',
+  yes_button:'Sim, estarei presente!',
+  no_button:'Não poderei comparecer',
+  success_title:'Presença confirmada!',
+  success_message:'Que bom ter você com a gente. 💛',
+  decline_title:'Resposta registrada',
+  decline_message:'Obrigada por avisar.',
+  message_label:'Deixe uma mensagem',
+  message_placeholder:'Uma mensagem especial para quem está celebrando...',
+  calendar_button:'Adicionar à agenda',
+  back_button:'Voltar ao convite',
+  closed_title:'Confirmações encerradas'
+ },
+ en:{
+  eyebrow:'RSVP',
+  intro:'Please confirm your attendance so everything can be prepared with care.',
+  yes_button:"Yes, I'll be there!",
+  no_button:"I won't be able to attend",
+  success_title:'Attendance confirmed!',
+  success_message:"We're so happy you'll be there. 💛",
+  decline_title:'Response received',
+  decline_message:'Thank you for letting us know.',
+  message_label:'Leave a message',
+  message_placeholder:'A special message for the celebration...',
+  calendar_button:'Add to calendar',
+  back_button:'Back to invitation',
+  closed_title:'RSVP closed'
+ }
+};
+const DEFAULT_APPEARANCE={
+ color:'#a66f73',background_color:'#fcf8f7',card_color:'#ffffff',text_color:'#2f292b',
+ muted_color:'#786f71',button_color:'#a66f73',button_text_color:'#ffffff',
+ overlay_color:'#ffffff',overlay_opacity:.78,card_opacity:.96,card_blur:10,card_radius:22,
+ font_style:'modern',card_style:'soft',background_position:'center',card_width:'medium',
+ interface_language:'pt-BR',invitation_url:'',calendar_location:'',calendar_end_time:'',
+ background_type:'none',background_url:'',cover_url:'',logo_url:''
+};
+const DEFAULT_EXTRA_FIELDS={phone:true,dietary:true,notes:false,message:true};
+const DEFAULT_CLIENT_PERMISSIONS={view:true,manage_guests:false,manage_appearance:false,manage_texts:false,view_messages:true,export_guests:true,manage_event_details:false};
+const parseObj=(value,fallback={})=>{try{const x=typeof value==='string'?JSON.parse(value):value;return x&&typeof x==='object'&&!Array.isArray(x)?x:fallback;}catch{return fallback;}};
+const eventAppearance=e=>({...DEFAULT_APPEARANCE,...parseObj(e?.appearance)});
+const eventExtra=e=>({...DEFAULT_EXTRA_FIELDS,...parseObj(e?.extra_fields)});
+const eventTexts=e=>({...PUBLIC_TEXTS[eventAppearance(e).interface_language==='en'?'en':'pt-BR'],...parseObj(e?.public_texts)});
+const eventLang=e=>eventAppearance(e).interface_language==='en'?'en':'pt-BR';
+const ptr=(e,pt,en)=>eventLang(e)==='en'?en:pt;
+const normalizedName=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+
+function markDuplicates(guests){
+ const groups=new Map(),result=guests.map(g=>({...g,possible_duplicate:false}));
+ for(const g of result){const k=normalizedName(g.name);if(!k)continue;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(g);}
+ for(const group of groups.values())if(group.length>1)group.forEach(g=>g.possible_duplicate=true);
+ return result;
+}
+function openModal(title,body,subtitle=''){
+ document.querySelector('#pc-modal')?.remove();
+ const wrap=document.createElement('div');wrap.id='pc-modal';wrap.className='modal-backdrop';
+ wrap.innerHTML=`<div class="json-modal pc-modal"><button class="modal-close" aria-label="Fechar">×</button><h2>${escape(title)}</h2>${subtitle?`<p class="muted">${escape(subtitle)}</p>`:''}${body}</div>`;
+ document.body.append(wrap);document.body.classList.add('modal-open');
+ const close=()=>{wrap.remove();document.body.classList.remove('modal-open');};
+ wrap.querySelector('.modal-close').onclick=close;wrap.onclick=e=>{if(e.target===wrap)close();};wrap.closeModal=close;return wrap;
+}
+function publicError(message,e){
+ if(eventLang(e)!=='en')return message;
+ const map={'Confirmações encerradas.':'RSVP is closed.','Convite inválido.':'Invalid invitation link.','Conclua a verificação de segurança.':'Complete the security check.','Verificação de segurança inválida. Tente novamente.':'Security check failed. Please try again.','Este convite não permite adicionar novas pessoas.':'This invitation does not allow adding new guests.'};
+ return map[message]||message;
+}
+function mountTurnstile(form,sitekey){
+ if(!sitekey||!form)return;
+ const hidden=document.createElement('input');hidden.type='hidden';hidden.name='turnstile_token';form.append(hidden);
+ const box=document.createElement('div');box.className='turnstile-box';form.insertBefore(box,form.querySelector('button'));
+ let tries=0;
+ const start=()=>{if(globalThis.turnstile?.render){form._turnstileWidget=turnstile.render(box,{sitekey,callback:value=>{hidden.value=value;},'expired-callback':()=>{hidden.value='';}});return;}if(tries++<60)setTimeout(start,100);};
+ start();
+}
+function resetTurnstile(form){if(form?._turnstileWidget!==undefined&&globalThis.turnstile?.reset)turnstile.reset(form._turnstileWidget);}
+function eventCalendar(e){
+ if(!e.event_date)return null;
+ const a=eventAppearance(e),start=new Date(e.event_date);if(!Number.isFinite(start.getTime()))return null;
+ let end=new Date(start.getTime()+4*60*60*1000);
+ if(a.calendar_end_time){const local=new Date(start),parts=a.calendar_end_time.split(':').map(Number),hh=parts[0],mm=parts[1];if(Number.isFinite(hh)&&Number.isFinite(mm)){end=new Date(local);end.setHours(hh,mm,0,0);if(end<=start)end.setDate(end.getDate()+1);}}
+ const compact=d=>d.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z'),location=a.calendar_location||e.location||'',description=a.invitation_url?`${ptr(e,'Convite','Invitation')}: ${a.invitation_url}`:'';
+ return {start:compact(start),end:compact(end),location,description};
+}
+function openCalendarMenu(e){
+ const range=eventCalendar(e);if(!range){notice(ptr(e,'Este evento ainda não tem data configurada.','This event does not have a date yet.'));return;}
+ const google=`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(e.title)}&dates=${range.start}%2F${range.end}&location=${encodeURIComponent(range.location)}&details=${encodeURIComponent(range.description)}`;
+ const modal=openModal(ptr(e,'Adicionar à agenda','Add to calendar'),`<div class="calendar-actions"><a class="button full-button" target="_blank" rel="noopener" href="${escape(google)}">Google Calendar</a><button class="secondary full-button" id="download-ics">Apple / Outlook (.ics)</button></div>`);
+ modal.querySelector('#download-ics').onclick=()=>{
+  const escIcs=s=>String(s||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;');
+  const ics=`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Presenca Confirmada//RSVP//PT-BR\r\nBEGIN:VEVENT\r\nUID:${crypto.randomUUID()}@presencaconfirmada\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z')}\r\nDTSTART:${range.start}\r\nDTEND:${range.end}\r\nSUMMARY:${escIcs(e.title)}\r\nLOCATION:${escIcs(range.location)}\r\nDESCRIPTION:${escIcs(range.description)}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob([ics],{type:'text/calendar;charset=utf-8'}));link.download=`${cleanSlug(e.title)||'evento'}.ics`;link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+ };
+}
+function parseMemberLines(value){
+ return String(value||'').split('\n').map(x=>x.trim()).filter(Boolean).map(line=>{const parts=line.split(';').map(x=>x?.trim()),name=parts[0],type=parts[1],status=parts[2];return {name,person_type:/crian|child/i.test(type||'')?'child':'adult',attendance_status:/não|nao|no/i.test(status||'')?'no':/pend/i.test(status||'')?'pending':'yes'};});
+}
+function mediaUrl(id){return `/media/${id}`;}
+function appearanceFields(a){
+ const number=(name,label,value,min,max,step)=>`<label><span class="field-label">${label}</span><input name="${name}" type="number" min="${min}" max="${max}" step="${step}" value="${escape(value)}"></label>`;
+ return `<div class="settings-grid">
+  ${field('button_color','Cor principal','color',a.button_color||a.color,false)}
+  ${field('button_text_color','Texto do botão','color',a.button_text_color,false)}
+  ${field('background_color','Cor do fundo','color',a.background_color,false)}
+  ${field('card_color','Cor do cartão','color',a.card_color,false)}
+  ${field('text_color','Cor do texto','color',a.text_color,false)}
+  ${field('muted_color','Texto secundário','color',a.muted_color,false)}
+  ${select('card_style','Estilo do cartão',[['soft','Suave'],['glass','Vidro'],['solid','Sólido']],a.card_style)}
+  ${select('card_width','Largura do cartão',[['narrow','Estreito'],['medium','Médio'],['wide','Largo']],a.card_width)}
+  ${select('font_style','Tipografia',[['modern','Moderna'],['elegant','Elegante'],['friendly','Amigável']],a.font_style)}
+  ${select('background_position','Posição da mídia',[['center','Centro'],['top','Topo'],['bottom','Base']],a.background_position)}
+  ${number('overlay_opacity','Opacidade do fundo',a.overlay_opacity,0,1,.05)}
+  ${number('card_opacity','Opacidade do cartão',a.card_opacity,0.55,1,.05)}
+  ${number('card_blur','Desfoque do cartão',a.card_blur,0,30,1)}
+  ${number('card_radius','Arredondamento',a.card_radius,0,40,1)}
+  ${select('interface_language','Idioma do convidado',[['pt-BR','Português'],['en','English']],a.interface_language)}
+ </div>
+ ${field('invitation_url','Link do convite para voltar · opcional','url',a.invitation_url||'',false)}
+ ${field('calendar_location','Local para agenda · opcional','text',a.calendar_location||'',false)}
+ ${field('calendar_end_time','Horário de término · opcional','time',a.calendar_end_time||'',false)}
+ <input type="hidden" name="background_type" value="${escape(a.background_type||'none')}">
+ <input type="hidden" name="background_url" value="${escape(a.background_url||'')}">
+ <input type="hidden" name="cover_url" value="${escape(a.cover_url||'')}">
+ <input type="hidden" name="logo_url" value="${escape(a.logo_url||'')}">`;
+}
+function collectAppearance(formEl,current){
+ const fd=new FormData(formEl),a={...current};
+ for(const key of ['button_color','button_text_color','background_color','card_color','text_color','muted_color','card_style','card_width','font_style','background_position','interface_language','invitation_url','calendar_location','calendar_end_time','background_type','background_url','cover_url','logo_url'])if(fd.has(key))a[key]=fd.get(key);
+ for(const key of ['overlay_opacity','card_opacity','card_blur','card_radius'])if(fd.has(key))a[key]=Number(fd.get(key));
+ a.color=a.button_color;return a;
+}
+function guestInternalEditor(e,g,endpoint,done,mode='internal'){
+ const members=g?.members||[];
+ const fields=field('name','Nome do responsável','text',g?.name||'')+field('group_label','Nome da família/grupo · opcional','text',g?.group_label||'',false)+field('phone','WhatsApp · opcional','tel',g?.phone||'',false)+field('max_people','Limite total','number',g?.max_people||e.max_people)+field('max_adults_allowed','Máximo de adultos · opcional','number',g?.max_adults_allowed??'',false)+field('max_children_allowed','Máximo de crianças · opcional','number',g?.max_children_allowed??'',false)+select('response_status','Status geral',[['yes','Confirmado'],['no','Não vai'],['pending','Pendente']],g?.response_status||'pending')+`<label><span class="field-label">Pessoas da família</span><textarea name="members" placeholder="Maria; adulto; sim&#10;Pedro; criança; sim">${escape(members.map(m=>`${m.name}; ${m.person_type==='child'?'criança':'adulto'}; ${m.attendance_status==='no'?'não':m.attendance_status==='pending'?'pendente':'sim'}`).join('\n'))}</textarea><small class="field-hint">Uma por linha: nome; adulto/criança; sim/não/pendente.</small></label>`+`<label><span class="field-label">Restrições alimentares</span><textarea name="dietary">${escape(g?.dietary||'')}</textarea></label>`+`<label><span class="field-label">Observações</span><textarea name="notes">${escape(g?.notes||'')}</textarea></label>`+`<label><span class="field-label">Mensagem</span><textarea name="message">${escape(g?.message||'')}</textarea></label>`;
+ const modal=openModal(g?'Editar família':'Adicionar família',form('family-editor',fields,g?'Salvar alterações':'Adicionar família'));
+ submit('family-editor',async b=>{b.max_adults_allowed=b.max_adults_allowed===''?null:Number(b.max_adults_allowed);b.max_children_allowed=b.max_children_allowed===''?null:Number(b.max_children_allowed);const parsed=parseMemberLines(b.members);b.members=parsed.map(m=>{const prior=members.find(x=>normalizedName(x.name)===normalizedName(m.name));return {...m,...(prior?{id:prior.id,is_preapproved:prior.is_preapproved}:{})};});if(!b.members.length)b.members=[{name:b.name,person_type:'adult',attendance_status:b.response_status}];if(g)await api(endpoint,'PATCH',b);else await api(endpoint,'POST',b);modal.closeModal();await done();});
+}
+function eventSettingsFields(e={}){
+ const basics=field('title','Nome do evento','text',e.title||'')+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location||'',false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
+ const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],e.rsvp_mode||'free')+select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],e.list_behavior||'strict')+field('max_people','Limite máximo por convite','number',e.max_people||10)+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
+ if(e.id)return basics+options+select('status','Situação',[['active','Ativo'],['inactive','Pausado'],['archived','Arquivado']],e.status);
+ return basics+`<label><span class="field-label">Endereço do evento<b class="required-mark">*</b></span><input name="slug" required autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: …/<strong id="event-url-preview">seu-evento</strong></small></label><details class="advanced-options"><summary>Opções do RSVP e check-in</summary><div class="advanced-body">${options}</div></details>`;
+}
 async function dashboard(){
  if(!user.studio){goto('/admin');return;}
- const {events}=await api('/api/events'),s=user.studio;
+ const archived=new URL(location.href).searchParams.get('arquivados')==='1';
+ const {events}=await api(`/api/events${archived?'?archived=1':''}`),s=user.studio;
  const active=events.filter(e=>e.status==='active').length;
  const billing=s.billing_mode==='credits'?{title:`${s.credits} crédito${s.credits===1?'':'s'}`,text:'disponíveis para novos eventos'}:{title:'Plano mensal',text:s.monthly_until?`vigente até ${formatDate(s.monthly_until)}`:'aguardando confirmação do pagamento'};
- const cards=events.map(e=>`<article class="event-card">
-   <div class="event-card-top"><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span><span class="event-date">${e.event_date?escape(formatDate(e.event_date)):'Data não informada'}</span></div>
-   <h2>${escape(e.title)}</h2>
-   <p>${e.location?escape(e.location):'Local ainda não informado'}</p>
-   <div class="event-card-actions"><a class="button small" href="/app/eventos/${e.id}">Gerenciar</a><a class="text-action" href="/${s.slug}/${e.slug}" target="_blank" rel="noopener">Abrir RSVP</a></div>
-  </article>`).join('');
- app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">${escape(s.name)}</span><h1>Seus eventos</h1><p>Uma visão rápida do que está ativo e do que vem a seguir.</p></div><div class="head-actions"><button class="secondary" id="import-json">Importar JSON</button><a class="button primary" href="/app/eventos/novo">Novo evento</a></div></section>
- <section class="summary-grid"><article><span>Eventos</span><strong>${events.length}</strong><small>no total</small></article><article><span>Ativos</span><strong>${active}</strong><small>recebendo respostas</small></article><article><span>Seu plano</span><strong class="summary-text">${escape(billing.title)}</strong><small>${escape(billing.text)}</small></article></section>
- <section class="content-section"><div class="section-row"><div><h2>Todos os eventos</h2><p>Abra um evento para ver convidados, personalização e check-in.</p></div></div>${cards?`<div class="event-grid">${cards}</div>`:`<div class="empty-state"><div class="empty-mark">✓</div><h2>Seu primeiro evento começa aqui</h2><p>Crie a celebração, personalize o RSVP e compartilhe o link com seu cliente.</p><a class="button" href="/app/eventos/novo">Criar primeiro evento</a></div>`}</section>`;
- menuEvents();click('import-json',()=>openJsonImport());
-}
-function eventFields(e={}){
- const basics=field('title','Nome do evento','text',e.title)+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location,false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
- const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Link individual por convite']],e.rsvp_mode||'free')+field('max_people','Limite de pessoas por convite','number',e.max_people||10)+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
- if(e.id)return basics+options+select('status','Situação',[['active','Ativo'],['inactive','Inativo'],['archived','Arquivado']],e.status);
- return basics+`<label><span class="field-label">Endereço do evento<b class="required-mark" aria-hidden="true">*</b></span><input name="slug" required aria-required="true" autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: …/<strong id="event-url-preview">seu-evento</strong></small></label><details class="advanced-options"><summary>Opções do RSVP e check-in</summary><div class="advanced-body">${options}</div></details>`;
+ const cards=events.map(e=>`<article class="event-card"><div class="event-card-top"><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span><span class="event-date">${e.event_date?escape(formatDate(e.event_date)):'Data não informada'}</span></div><h2>${escape(e.title)}</h2><p>${e.location?escape(e.location):'Local ainda não informado'}</p><div class="mini-stats"><span><b>${Number(e.guest_count||0)}</b> convites</span><span><b>${Number(e.yes_count||0)}</b> confirmados</span><span><b>${Number(e.pending_count||0)}</b> pendentes</span></div><div class="event-card-actions">${archived?`<button class="button small" data-restore-event="${e.id}">Restaurar</button>`:`<a class="button small" href="/app/eventos/${e.id}">Gerenciar</a><a class="text-action" href="/${s.slug}/${e.slug}" target="_blank" rel="noopener">Abrir RSVP</a>`}</div></article>`).join('');
+ app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">${escape(s.name)}</span><h1>${archived?'Eventos arquivados':'Seus eventos'}</h1><p>${archived?'Eventos guardados, sem receber novas confirmações.':'Uma visão rápida do que está ativo e do que vem a seguir.'}</p></div><div class="head-actions"><a class="button secondary" href="/app${archived?'':'?arquivados=1'}">${archived?'Ver ativos':'Arquivados'}</a>${archived?'':`<button class="secondary" id="import-json">Importar JSON</button><a class="button primary" href="/app/eventos/novo">Novo evento</a>`}</div></section><section class="summary-grid"><article><span>${archived?'Arquivados':'Eventos'}</span><strong>${events.length}</strong><small>${archived?'guardados':'nesta visão'}</small></article><article><span>Ativos</span><strong>${active}</strong><small>recebendo respostas</small></article><article><span>Seu plano</span><strong class="summary-text">${escape(billing.title)}</strong><small>${escape(billing.text)}</small></article></section><section class="content-section">${cards?`<div class="event-grid">${cards}</div>`:`<div class="empty-state"><div class="empty-mark">✓</div><h2>${archived?'Nenhum evento arquivado':'Seu primeiro evento começa aqui'}</h2><p>${archived?'Quando arquivar um evento, ele aparecerá aqui.':'Crie a celebração, personalize o RSVP e compartilhe o link.'}</p>${archived?'':'<a class="button" href="/app/eventos/novo">Criar primeiro evento</a>'}</div>`}</section>`;
+ menuEvents();click('import-json',()=>openJsonImport());document.querySelectorAll('[data-restore-event]').forEach(btn=>btn.onclick=async()=>{await api(`/api/events/${btn.dataset.restoreEvent}/restore`,'POST',{});await dashboard();});
 }
 async function newEvent(){
- app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>Você pode completar e alterar os detalhes depois. O evento usa um crédito ou sua mensalidade vigente.</p></section><div class="card setup-card">${form('event',eventFields(),'Criar evento')}</div>`;
- menuEvents();
- bindAutoSlug('title','slug','event-url-preview');
- submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
+ app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>Você pode completar e alterar os detalhes depois. O evento usa um crédito ou sua mensalidade vigente.</p></section><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
+ menuEvents();bindAutoSlug('title','slug','event-url-preview');submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
 }
-
+function guestRowHtml(e,g,link){
+ const people=g.members.filter(m=>m.attendance_status==='yes'),adults=people.filter(m=>m.person_type==='adult').length,children=people.filter(m=>m.person_type==='child').length;
+ return `<article class="guest-row guest-card" data-guest="${g.id}" data-name="${escape(normalizedName(g.name+' '+g.group_label+' '+g.members.map(m=>m.name).join(' ')))}" data-status="${g.response_status}" data-duplicate="${g.possible_duplicate?'1':'0'}"><label class="guest-select"><input type="checkbox" data-select-guest="${g.id}"></label><div class="guest-main"><div><strong>${escape(g.group_label||g.name)}</strong><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span>${g.possible_duplicate?'<span class="duplicate-chip">Possível duplicado</span>':''}</div>${g.group_label?`<p>Responsável: ${escape(g.name)}</p>`:''}<p>${g.members.map(m=>`${escape(m.name)}${m.person_type==='child'?' · criança':''}`).join(' · ')}</p><small>${adults} adulto${adults===1?'':'s'} · ${children} criança${children===1?'':'s'}${g.responded_at?` · respondeu ${escape(formatDate(g.responded_at,true))}`:''}</small>${g.message?`<small class="guest-message">“${escape(g.message)}”</small>`:''}</div><div class="guest-actions"><a class="text-action" href="${link}?invite=${encodeURIComponent(g.token)}" target="_blank" rel="noopener">Abrir convite</a><button class="secondary small" data-edit="${g.id}">Editar</button><button class="quiet-danger small" data-delete="${g.id}">Lixeira</button></div></article>`;
+}
+async function showHistory(base){
+ const {audit}=await api(`${base}/audit`),labels={create_event:'Evento criado',update_event:'Evento atualizado',duplicate_event:'Evento duplicado',guest_created:'Convidado cadastrado',guest_updated:'Convidado editado',guest_deleted:'Convidado enviado à lixeira',guest_restored:'Convidado restaurado',guest_bulk_deleted:'Convidados enviados à lixeira',guest_bulk_restored:'Convidados restaurados',rsvp_submitted:'Confirmação enviada',media_uploaded:'Mídia enviada',media_deleted:'Mídia removida',checkin:'Check-in',client_link_reset:'Link do cliente renovado',client_event_updated:'Cliente editou o evento'};
+ openModal('Histórico do evento',audit.length?`<div class="history-list">${audit.map(x=>`<div class="history-item"><div><strong>${escape(labels[x.action]||x.action)}</strong><span>${escape(x.actor_name||'Sistema / convidado')}</span></div><time>${escape(formatDate(x.created_at,true))}</time></div>`).join('')}</div>`:'<div class="empty-state compact"><p>Nenhuma alteração registrada ainda.</p></div>');
+}
 async function eventPage(eventId){
- const {event:e}=await api(`/api/events/${eventId}`),{guests}=await api(`/api/events/${eventId}/guests`),base=`/api/events/${eventId}`,confirmed=guests.filter(g=>g.response_status==='yes');
- const link=`/${user.studio.slug}/${e.slug}`,appearance=JSON.parse(e.appearance||'{}'),studioBrand=JSON.parse(user.studio.brand||'{}');
- const confirmedPeople=confirmed.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes').length,0);
- const pending=guests.filter(g=>g.response_status==='pending').length;
- const guestRows=guests.map(g=>`<article class="guest-row" data-name="${escape((g.name+' '+g.members.map(m=>m.name).join(' ')).toLowerCase())}">
-   <div class="guest-main"><div><strong>${escape(g.name)}</strong><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span></div><p>${g.members.length?g.members.map(m=>escape(m.name)).join(', '):'Sem acompanhantes informados'}</p>${g.message?`<small>Mensagem: ${escape(g.message)}</small>`:''}</div>
-   <div class="guest-actions"><a class="text-action" href="${link}?invite=${encodeURIComponent(g.token)}" target="_blank" rel="noopener">Abrir convite</a><button class="secondary small" data-edit="${g.id}">Editar</button><button class="quiet-danger small" data-cancel="${g.id}">Cancelar</button></div>
-  </article>`).join('');
- app.innerHTML=menu()+`<section class="app-page-head event-head"><div><span class="eyebrow">${escape(user.studio.name)}</span><div class="title-with-status"><h1>${escape(e.title)}</h1><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span></div><p>${e.event_date?escape(formatDate(e.event_date,true)):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''}</p></div><div class="head-actions"><a class="button" href="${link}" target="_blank" rel="noopener">Abrir RSVP</a><button class="secondary" id="copy-public">Copiar link</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button>${e.checkin_mode!=='off'?`<a class="button secondary" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}</div></section>
- <section class="summary-grid event-summary"><article><span>Convites</span><strong>${guests.length}</strong><small>cadastrados</small></article><article><span>Confirmados</span><strong>${confirmed.length}</strong><small>${confirmedPeople} pessoa${confirmedPeople===1?'':'s'}</small></article><article><span>Pendentes</span><strong>${pending}</strong><small>aguardando resposta</small></article></section>
- <section class="workspace-grid">
-  <div class="workspace-main">
-   <div class="card section-card"><div class="section-row"><div><h2>Convidados e famílias</h2><p>Busque, adicione ou edite respostas deste evento.</p></div><button class="secondary small" id="export">Exportar CSV</button></div>
-    <div class="search-box"><input id="search" placeholder="Buscar convidado ou acompanhante" aria-label="Buscar convidado"></div>
-    <div id="guests">${guestRows||'<div class="empty-state compact"><h3>Nenhum convidado cadastrado</h3><p>Adicione uma família manualmente ou importe sua lista.</p></div>'}</div>
-    <div class="inline-tools"><details><summary>Adicionar convidado ou família</summary>${form('add-guest',field('name','Nome do responsável')+field('phone','Telefone · opcional','tel','',false)+field('max_people','Limite da família','number',e.max_people),'Adicionar convidado')}</details>
-    <details><summary>Importar lista em CSV</summary>${form('import','<label><span class="field-label">Lista CSV<b class="required-mark">*</b></span><textarea name="csv" required placeholder="nome,telefone,max_pessoas\nMaria,62999999999,4"></textarea><small class="field-hint">Use nome,telefone,max_pessoas. O formato antigo name,phone,max_people também continua aceito. Até 300 registros por importação.</small></label>','Importar lista')}</details></div>
-   </div>
-  </div>
-  <aside class="workspace-side">
-   <details class="management-card" open><summary>Detalhes do evento</summary><div class="management-body">${form('settings',eventFields(e),'Salvar alterações')}</div></details>
-   <details class="management-card"><summary>Visual e mensagem</summary><div class="management-body">${form('appearance',field('color','Cor principal','color',appearance.color||studioBrand.color||'#a66f73')+`<input type="hidden" name="background" value="${escape(appearance.background||'')}">`+`<label><span class="field-label">Mensagem de boas-vindas</span><textarea name="welcome_message" placeholder="Escreva uma mensagem curta para os convidados.">${escape(e.welcome_message)}</textarea></label>`,'Salvar visual')}<label class="upload-box"><span>Imagem de fundo · opcional</span><input id="upload" type="file" accept="image/jpeg,image/png,image/webp,image/avif"><small>JPG, PNG, WebP ou AVIF. Até 20 MB.</small></label><p id="media-result" class="field-hint"></p></div></details>
-   <details class="management-card"><summary>Acesso do cliente</summary><div class="management-body"><p class="muted">Este link privado permite que seu cliente acompanhe a lista sem acessar sua conta profissional.</p>${form('client','<label class="check-label"><input type="checkbox" name="manage_guests"> <span>Permitir que o cliente altere respostas</span></label>','Gerar novo link')}<p id="client-result" class="client-link"><a href="/cliente/${encodeURIComponent(e.client_token)}" target="_blank" rel="noopener">Abrir painel atual do cliente</a></p></div></details>
-  </aside>
- </section>`;
- menuEvents();
- click('copy-public',async()=>{await navigator.clipboard.writeText(location.origin+link);notice('Link do RSVP copiado.');});
- click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));
- click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));
- submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');});
- submit('add-guest',async b=>{await api(`${base}/guests`,'POST',b);await eventPage(eventId);});
- submit('import',async b=>{const rows=parseCSV(b.csv),headers=rows.shift()?.map(x=>x.replace(/^\uFEFF/,'').trim().toLowerCase()),header=headers?.join(','),valid=header==='nome,telefone,max_pessoas'||header==='name,phone,max_people';if(!valid)throw Error('Use o cabeçalho nome,telefone,max_pessoas.');await api(`${base}/guests`,'POST',{guests:rows.filter(r=>r.some(Boolean)).map(r=>({name:r[0],phone:r[1],max_people:r[2]||e.max_people}))});await eventPage(eventId);});
- submit('appearance',async b=>{await api(base,'PATCH',{appearance:{color:b.color,background:b.background},welcome_message:b.welcome_message});notice('Visual salvo.');});
- submit('client',async b=>{const result=await api(`${base}/client-link`,'POST',{manage_guests:!!b.manage_guests});const target=document.querySelector('#client-result');target.innerHTML=`<a href="${escape(result.url)}" target="_blank" rel="noopener">Abrir novo painel do cliente</a>`;});
- document.querySelector('#search').addEventListener('input',ev=>document.querySelectorAll('[data-name]').forEach(row=>row.hidden=!row.dataset.name.includes(ev.target.value.toLowerCase())));
- document.querySelectorAll('[data-cancel]').forEach(btn=>btn.addEventListener('click',async()=>{if(!confirm('Cancelar a presença deste convite?'))return;try{await api(`${base}/guests/${btn.dataset.cancel}`,'DELETE');await eventPage(eventId);}catch(err){notice(err.message);}}));
- document.querySelectorAll('[data-edit]').forEach(btn=>btn.addEventListener('click',()=>guestEditor(e,guests.find(g=>g.id===btn.dataset.edit),`${base}/guests/${btn.dataset.edit}`,()=>eventPage(eventId))));
+ const base=`/api/events/${eventId}`;
+ const results=await Promise.all([api(base),api(`${base}/guests`),api(`${base}/guests?trash=1`),api(`${base}/media`)]),e=results[0].event,guests=markDuplicates(results[1].guests),trash=results[2].guests,media=results[3].media;
+ const confirmed=guests.filter(g=>g.response_status==='yes'),pending=guests.filter(g=>g.response_status==='pending'),link=`/${user.studio.slug}/${e.slug}`,a=eventAppearance(e),extra=eventExtra(e),texts={...PUBLIC_TEXTS[a.interface_language==='en'?'en':'pt-BR'],...parseObj(e.public_texts)},permissions={...DEFAULT_CLIENT_PERMISSIONS,...parseObj(e.client_permissions)},confirmedPeople=confirmed.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes').length,0);
+ const mediaCards=media.map(m=>`<div class="media-card"><div class="media-thumb">${m.mime_type.startsWith('video/')?`<video src="${mediaUrl(m.id)}" muted playsinline></video>`:`<img src="${mediaUrl(m.id)}" alt="">`}</div><div><strong>${escape(({background_image:'Fundo',background_video:'Vídeo',cover:'Capa',logo:'Logo',other:'Mídia'}[m.media_kind]||'Mídia'))}</strong><small>${escape(m.original_name||m.mime_type)}</small></div><div class="media-actions"><button class="secondary small" data-use-media="${m.id}" data-kind="${m.media_kind}">Usar</button><button class="quiet-danger small" data-delete-media="${m.id}">Remover</button></div></div>`).join('');
+ app.innerHTML=menu()+`<section class="app-page-head event-head"><div><span class="eyebrow">${escape(user.studio.name)}</span><div class="title-with-status"><h1>${escape(e.title)}</h1><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span></div><p>${e.event_date?escape(formatDate(e.event_date,true)):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''}</p></div><div class="head-actions"><a class="button" href="${link}" target="_blank" rel="noopener">Abrir RSVP</a><button class="secondary" id="copy-public">Copiar link</button>${e.checkin_mode!=='off'?`<a class="button secondary" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}</div></section>
+ <section class="summary-grid event-summary"><article><span>Convites</span><strong>${guests.length}</strong><small>ativos</small></article><article><span>Confirmados</span><strong>${confirmedPeople}</strong><small>pessoas</small></article><article><span>Pendentes</span><strong>${pending.length}</strong><small>respostas</small></article></section>
+ <section class="workspace-grid"><div class="workspace-main"><div class="card section-card"><div class="section-row"><div><h2>Convidados e famílias</h2><p>Busque, filtre, selecione e organize sua lista.</p></div><div class="row"><button class="secondary small" id="add-family">Adicionar família</button><button class="secondary small" id="export">Exportar CSV</button></div></div>
+ <div class="guest-toolbar"><input id="search" placeholder="Buscar convidado ou acompanhante"><div class="filter-chips"><button class="active" data-filter="">Todos <b>${guests.length}</b></button><button data-filter="yes">Confirmados <b>${confirmed.length}</b></button><button data-filter="pending">Pendentes <b>${pending.length}</b></button><button data-filter="no">Não irão <b>${guests.filter(g=>g.response_status==='no').length}</b></button><button data-filter="duplicates">Duplicados <b>${guests.filter(g=>g.possible_duplicate).length}</b></button></div></div>
+ <div class="bulk-bar" id="bulk-bar" hidden><strong id="bulk-count">0 selecionados</strong><button class="quiet-danger small" id="bulk-delete">Enviar à lixeira</button><button class="secondary small" id="bulk-clear">Cancelar seleção</button></div>
+ <div id="guests">${guests.map(g=>guestRowHtml(e,g,link)).join('')||'<div class="empty-state compact"><h3>Nenhum convidado cadastrado</h3><p>Adicione uma família ou importe sua lista.</p></div>'}</div>
+ <div class="inline-tools"><details><summary>Importar lista em CSV</summary>${form('import','<label><span class="field-label">Lista CSV<b class="required-mark">*</b></span><textarea name="csv" required placeholder="nome,telefone,max_pessoas,max_adultos,max_criancas,grupo\\nMaria,62999999999,4,2,2,Família Silva"></textarea><small class="field-hint">Também aceitamos o formato antigo nome,telefone,max_pessoas.</small></label>','Importar lista')}</details><details><summary>Lixeira (${trash.length})</summary><div class="trash-list">${trash.length?trash.map(g=>`<div class="trash-row"><span>${escape(g.group_label||g.name)}</span><button class="secondary small" data-restore-guest="${g.id}">Restaurar</button></div>`).join(''):'<p class="muted">A lixeira está vazia.</p>'}</div></details></div></div></div>
+ <aside class="workspace-side"><details class="management-card" open><summary>Detalhes e regras</summary><div class="management-body">${form('settings',eventSettingsFields(e),'Salvar alterações')}</div></details>
+ <details class="management-card"><summary>Campos do RSVP</summary><div class="management-body">${form('extra-fields',`<div class="permission-list">${[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem carinhosa']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar campos')}</div></details>
+ <details class="management-card"><summary>Visual, idioma e agenda</summary><div class="management-body">${form('appearance',appearanceFields(a),'Salvar visual')}<div class="media-uploader"><label><span class="field-label">Tipo da mídia</span><select id="media-kind"><option value="background_image">Imagem de fundo</option><option value="background_video">Vídeo de fundo</option><option value="cover">Capa</option><option value="logo">Logo do evento</option><option value="other">Outra mídia</option></select></label><label class="upload-box"><span>Enviar arquivo</span><input id="upload" type="file" accept="image/jpeg,image/png,image/webp,image/avif,video/mp4,video/webm"><small>Imagens até 10 MB; vídeos até 20 MB.</small></label><p id="media-result" class="field-hint"></p></div><div class="media-library">${mediaCards||'<p class="muted">Nenhuma mídia enviada.</p>'}</div></div></details>
+ <details class="management-card"><summary>Textos do convidado</summary><div class="management-body">${form('public-texts',Object.entries({eyebrow:'Rótulo',intro:'Introdução',yes_button:'Botão “sim”',no_button:'Botão “não”',success_title:'Título de sucesso',success_message:'Mensagem de sucesso',decline_title:'Título de recusa',decline_message:'Mensagem de recusa',message_label:'Título da mensagem',message_placeholder:'Placeholder da mensagem',calendar_button:'Botão da agenda',back_button:'Botão voltar ao convite',closed_title:'Prazo encerrado'}).map(([k,l])=>field(k,l,'text',texts[k]||'',false)).join(''),'Salvar textos')}</div></details>
+ <details class="management-card"><summary>Acesso do cliente</summary><div class="management-body"><p class="muted">Escolha exatamente o que seu cliente pode fazer no link privado.</p>${form('client',`<div class="permission-list">${[['manage_guests','Adicionar e editar convidados'],['manage_appearance','Alterar aparência'],['manage_texts','Alterar textos públicos'],['view_messages','Ver mensagens dos convidados'],['export_guests','Exportar lista'],['manage_event_details','Alterar data, local e campos']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="${k}" ${permissions[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Gerar novo link')}<p id="client-result" class="client-link"><a href="/cliente/${encodeURIComponent(e.client_token)}" target="_blank" rel="noopener">Abrir painel atual do cliente</a></p></div></details>
+ <details class="management-card"><summary>Ferramentas</summary><div class="management-body"><div class="tool-stack"><button class="secondary" id="duplicate-event">Duplicar evento</button><button class="secondary" id="history">Histórico</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button><button class="quiet-danger" id="archive-event">Arquivar evento</button></div></div></details></aside></section>`;
+ menuEvents();click('copy-public',async()=>{await navigator.clipboard.writeText(location.origin+link);notice('Link do RSVP copiado.');});click('add-family',()=>guestInternalEditor(e,null,`${base}/guests`,()=>eventPage(eventId)));click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));click('duplicate-event',async()=>{if(!confirm('Duplicar este evento? A cópia conta como um novo evento e usa seu plano vigente.'))return;const {event}=await api(`${base}/duplicate`,'POST',{});goto(`/app/eventos/${event.id}`);});click('archive-event',async()=>{if(!confirm('Arquivar este evento? O RSVP deixará de receber respostas.'))return;await api(`${base}/archive`,'POST',{});goto('/app');});click('history',()=>showHistory(base));
+ submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');await eventPage(eventId);});
+ submit('extra-fields',async(_,formEl)=>{const fd=new FormData(formEl);await api(base,'PATCH',{extra_fields:Object.fromEntries(['phone','dietary','notes','message'].map(k=>[k,fd.has(k)]))});notice('Campos atualizados.');});
+ submit('public-texts',async(_,formEl)=>{await api(base,'PATCH',{public_texts:Object.fromEntries(new FormData(formEl))});notice('Textos atualizados.');});
+ submit('appearance',async(_,formEl)=>{await api(base,'PATCH',{appearance:collectAppearance(formEl,a)});notice('Visual atualizado.');await eventPage(eventId);});
+ submit('client',async(_,formEl)=>{const fd=new FormData(formEl),body={view:true};for(const k of Object.keys(DEFAULT_CLIENT_PERMISSIONS))if(k!=='view')body[k]=fd.has(k);const result=await api(`${base}/client-link`,'POST',body);document.querySelector('#client-result').innerHTML=`<a href="${escape(result.url)}" target="_blank" rel="noopener">Abrir novo painel do cliente</a>`;notice('Novo link privado gerado.');});
+ submit('import',async b=>{const rows=parseCSV(b.csv),headers=rows.shift()?.map(x=>x.replace(/^\uFEFF/,'').trim().toLowerCase()),head=headers?.join(','),extended=head==='nome,telefone,max_pessoas,max_adultos,max_criancas,grupo',legacy=head==='nome,telefone,max_pessoas'||head==='name,phone,max_people';if(!extended&&!legacy)throw Error('Use o cabeçalho indicado no exemplo.');await api(`${base}/guests`,'POST',{guests:rows.filter(r=>r.some(Boolean)).map(r=>({name:r[0],phone:r[1],max_people:r[2]||e.max_people,...(extended?{max_adults_allowed:r[3]||null,max_children_allowed:r[4]||null,group_label:r[5]||''}:{})}))});await eventPage(eventId);});
+ document.querySelectorAll('[data-edit]').forEach(btn=>btn.onclick=()=>guestInternalEditor(e,guests.find(g=>g.id===btn.dataset.edit),`${base}/guests/${btn.dataset.edit}`,()=>eventPage(eventId)));
+ document.querySelectorAll('[data-delete]').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar esta família para a lixeira?'))return;await api(`${base}/guests/${btn.dataset.delete}`,'DELETE');await eventPage(eventId);});
+ document.querySelectorAll('[data-restore-guest]').forEach(btn=>btn.onclick=async()=>{await api(`${base}/guests/${btn.dataset.restoreGuest}/restore`,'POST',{});await eventPage(eventId);});
  click('export',()=>downloadCSV(guests));
- document.querySelector('#upload').addEventListener('change',async ev=>{const file=ev.target.files[0];if(!file)return;const result=document.querySelector('#media-result');result.textContent='Enviando…';try{const r=await fetch(`${base}/media`,{method:'POST',headers:{'content-type':file.type},body:file});const b=await r.json();if(!r.ok)throw Error(b.error);const visual=document.querySelector('#appearance');visual.querySelector('[name=background]').value=b.url;await api(base,'PATCH',{appearance:{color:visual.querySelector('[name=color]').value,background:b.url},welcome_message:visual.querySelector('[name=welcome_message]').value});result.textContent='Imagem enviada e salva.';}catch(err){result.textContent='';notice(err.message);}});
+ const selected=new Set(),bulk=document.querySelector('#bulk-bar'),count=document.querySelector('#bulk-count');const syncSelection=()=>{count.textContent=`${selected.size} selecionado${selected.size===1?'':'s'}`;bulk.hidden=!selected.size;};document.querySelectorAll('[data-select-guest]').forEach(cb=>cb.onchange=()=>{cb.checked?selected.add(cb.dataset.selectGuest):selected.delete(cb.dataset.selectGuest);syncSelection();});click('bulk-clear',()=>{selected.clear();document.querySelectorAll('[data-select-guest]').forEach(x=>x.checked=false);syncSelection();});click('bulk-delete',async()=>{if(!confirm(`Enviar ${selected.size} convidado(s) para a lixeira?`))return;await api(`${base}/guests/bulk`,'POST',{action:'delete',ids:[...selected]});await eventPage(eventId);});
+ let activeFilter='';const filter=()=>{const q=normalizedName(document.querySelector('#search').value);document.querySelectorAll('[data-guest]').forEach(row=>{const matchesSearch=!q||row.dataset.name.includes(q),matchesFilter=!activeFilter||(activeFilter==='duplicates'?row.dataset.duplicate==='1':row.dataset.status===activeFilter);row.hidden=!(matchesSearch&&matchesFilter);});};document.querySelector('#search').oninput=filter;document.querySelectorAll('[data-filter]').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('[data-filter]').forEach(x=>x.classList.remove('active'));btn.classList.add('active');activeFilter=btn.dataset.filter;filter();});
+ document.querySelector('#upload').onchange=async ev=>{const file=ev.target.files[0];if(!file)return;const kind=document.querySelector('#media-kind').value,result=document.querySelector('#media-result');result.textContent='Enviando…';try{const r=await fetch(`${base}/media?kind=${encodeURIComponent(kind)}`,{method:'POST',headers:{'content-type':file.type,'x-file-name':encodeURIComponent(file.name)},body:file});const data=await r.json();if(!r.ok)throw Error(data.error);const next={...a},url=data.media.url;if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;await api(base,'PATCH',{appearance:next});result.textContent='Mídia enviada e aplicada.';await eventPage(eventId);}catch(err){result.textContent='';notice(err.message);}};
+ document.querySelectorAll('[data-use-media]').forEach(btn=>btn.onclick=async()=>{const next={...a},url=mediaUrl(btn.dataset.useMedia),kind=btn.dataset.kind;if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;await api(base,'PATCH',{appearance:next});notice('Mídia aplicada.');await eventPage(eventId);});
+ document.querySelectorAll('[data-delete-media]').forEach(btn=>btn.onclick=async()=>{if(!confirm('Remover esta mídia?'))return;await api(`${base}/media/${btn.dataset.deleteMedia}`,'DELETE');await eventPage(eventId);});
 }
 function parseCSV(input){const rows=[[]];let current='',quoted=false;for(let i=0;i<input.length;i++){const c=input[i];if(c==='"'){if(quoted&&input[i+1]==='"'){current+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){rows.at(-1).push(current);current='';}else if(c==='\n'&&!quoted){rows.at(-1).push(current.replace(/\r$/,''));current='';rows.push([]);}else current+=c;}if(quoted)throw Error('CSV com aspas não fechadas.');rows.at(-1).push(current.replace(/\r$/,''));return rows;}
 function downloadCSV(guests){
  const cell=v=>`"${String(v??'').replace(/^[=+@\-]/,"'$&").replace(/"/g,'""')}"`;
- const data=[
-  ['nome','telefone','status','pessoas','mensagem'],
-  ...guests.map(g=>[g.name,g.phone,labelStatus(g.response_status),g.members.filter(m=>m.attendance_status==='yes').length,g.message])
- ].map(r=>r.map(cell).join(',')).join('\r\n');
- const link=document.createElement('a');
- link.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));
- link.download='convidados.csv';
- link.click();
- setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+ const data=[['grupo','responsavel','telefone','status','adultos','criancas','restricoes','mensagem'],...guests.map(g=>{const yes=g.members.filter(m=>m.attendance_status==='yes');return [g.group_label,g.name,g.phone,labelStatus(g.response_status),yes.filter(m=>m.person_type==='adult').length,yes.filter(m=>m.person_type==='child').length,g.dietary,g.message];})].map(r=>r.map(cell).join(',')).join('\r\n');
+ const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));link.download='convidados.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
 }
-function guestEditor(e,g,endpoint,done,mode=false){
- const publicMode=mode===true,clientMode=mode==='client',externalMode=publicMode||clientMode;
- const members=g?.members?.filter(m=>m.attendance_status!=='no')||[];
- const max=Math.min(e.max_people,g?.max_people||e.max_people);
- const details=[e.event_date?formatDate(e.event_date,true):'',e.location||'',e.deadline?`Confirme até ${formatDate(e.deadline,true)}`:''].filter(Boolean).join(' · ');
- const fields=field('name','Nome do responsável','text',g?.name||'')+field('phone','WhatsApp · opcional','tel',g?.phone||'',false)+select('response_status','Sua resposta',[['yes','Sim, estarei presente'],['no','Não poderei comparecer'],['pending','Ainda não sei']],g?.response_status||'yes')+`<label><span class="field-label">Pessoas deste convite<b class="required-mark">*</b></span><textarea name="members" required placeholder="Um nome por linha">${escape(members.length?members.map(m=>`${m.name}${m.person_type==='child'?'; criança':''}`).join('\n'):g?.name||'')}</textarea><small class="field-hint">Um nome por linha. Para identificar criança, use “; criança” depois do nome. Limite: ${max} pessoa${max===1?'':'s'}.</small></label><label><span class="field-label">Restrições alimentares · opcional</span><textarea name="dietary" placeholder="Ex.: sem lactose, alergia a amendoim…">${escape(g?.dietary||'')}</textarea></label><label><span class="field-label">Mensagem · opcional</span><textarea name="message" placeholder="Deixe uma mensagem para os anfitriões.">${escape(g?.message||'')}</textarea></label>`;
- app.innerHTML=`${externalMode?'':menu()}<div class="${externalMode?'rsvp-shell':'edit-shell'}"><div class="rsvp-card"><div class="rsvp-brand">${escape(e.studio_name||user?.studio?.name||'Confirmação de presença')}</div><span class="eyebrow">Confirmação de presença</span><h1>${escape(e.title)}</h1>${details?`<p class="event-meta">${escape(details)}</p>`:''}<p class="rsvp-welcome">${escape(e.welcome_message||'Confirme sua presença para os anfitriões prepararem tudo com carinho.')}</p>${form('rsvp',fields,publicMode?'Enviar resposta':'Salvar resposta')}</div></div>`;
- if(!externalMode)menuEvents();
- const responsible=document.querySelector('[name="name"]'),membersField=document.querySelector('[name="members"]');
- if(responsible&&membersField&&!members.length&&!membersField.value.trim()){
-  let auto=true,last='';
-  responsible.addEventListener('input',()=>{if(auto){membersField.value=responsible.value;last=responsible.value;}});
-  membersField.addEventListener('input',()=>{auto=!membersField.value.trim()||membersField.value===last;});
- }
- submit('rsvp',async b=>{
-  b.members=b.members.split('\n').map(line=>line.trim()).filter(Boolean).map(line=>{const parts=line.split(';');const prior=g?.members?.find(m=>m.name===parts[0].trim());return {name:parts[0].trim(),person_type:parts[1]?.trim().toLowerCase()==='criança'?'child':'adult',...(prior?{id:prior.id}:{})};});
-  if(g?.token)b.token=g.token;
-  const result=await api(endpoint,publicMode?'POST':'PATCH',b);
-  if(publicMode){
-   const guest=result.guest;
-   const qrs=guest.qr_token?[{name:guest.name,token:guest.qr_token}]:guest.members.filter(m=>m.qr_token).map(m=>({name:m.name,token:m.qr_token}));
-   app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card success-card"><div class="success-mark">✓</div><span class="eyebrow">${guest.response_status==='yes'?'Tudo certo':'Resposta recebida'}</span><h1>${guest.response_status==='yes'?'Presença confirmada!':'Resposta registrada'}</h1><p>Obrigada por responder. Você pode voltar a este convite se precisar alterar sua resposta.</p><a class="button secondary full-button" href="${location.pathname}?invite=${guest.token}">Alterar minha resposta</a>${qrs.length?`<div class="qr-links"><h2>QR de entrada</h2><p>Guarde o QR de cada pessoa para apresentar na entrada.</p>${qrs.map(q=>`<a href="/q/${q.token}">${escape(q.name)}</a>`).join('')}</div>`:''}</div></div>`;
-  }else await done();
- });
+function publicFrame(e,content){
+ const a=eventAppearance(e),t=eventTexts(e),logo=a.logo_url?`<img class="event-logo" src="${escape(a.logo_url)}" alt="">`:'',cover=a.cover_url?`<img class="event-cover" src="${escape(a.cover_url)}" alt="">`:'';
+ return `<div class="rsvp-shell event-font-${escape(a.font_style)} event-width-${escape(a.card_width)}">${cover}<div class="rsvp-card">${logo}<div class="rsvp-brand">${escape(e.studio_name||'')}</div><span class="eyebrow">${escape(t.eyebrow)}</span><h1>${escape(e.title)}</h1>${content}</div></div>`;
+}
+function publicOptionalFields(e,g={}){
+ const f=eventExtra(e),t=eventTexts(e);
+ return `${f.phone?field('phone',ptr(e,'WhatsApp · opcional','Phone · optional'),'tel',g.phone||'',false):''}${f.dietary?`<label><span class="field-label">${ptr(e,'Restrição alimentar · opcional','Dietary restrictions · optional')}</span><textarea name="dietary">${escape(g.dietary||'')}</textarea></label>`:''}${f.notes?`<label><span class="field-label">${ptr(e,'Observações · opcional','Notes · optional')}</span><textarea name="notes">${escape(g.notes||'')}</textarea></label>`:''}${f.message?`<label><span class="field-label">${escape(t.message_label)}</span><textarea name="message" placeholder="${escape(t.message_placeholder)}">${escape(g.message||'')}</textarea></label>`:''}`;
+}
+function publicSuccess(e,guest){
+ const t=eventTexts(e),a=eventAppearance(e),yes=guest.response_status==='yes',qrs=guest.qr_token?[{name:guest.name,token:guest.qr_token}]:guest.members.filter(m=>m.qr_token).map(m=>({name:m.name,token:m.qr_token}));
+ app.innerHTML=publicFrame(e,`<div class="success-card"><div class="success-mark">${yes?'✓':'♡'}</div><h2>${escape(yes?t.success_title:t.decline_title)}</h2><p>${escape(yes?t.success_message:t.decline_message)}</p>${yes&&e.event_date?`<div class="success-event-summary"><strong>${escape(formatDate(e.event_date,true))}</strong>${(a.calendar_location||e.location)?`<span>${escape(a.calendar_location||e.location)}</span>`:''}</div><button class="full-button" id="calendar">${escape(t.calendar_button)}</button>`:''}${a.invitation_url?`<a class="button secondary full-button" href="${escape(a.invitation_url)}">${escape(t.back_button)}</a>`:''}<a class="button ghost full-button" href="${location.pathname}?invite=${encodeURIComponent(guest.token)}">${ptr(e,'Alterar minha resposta','Change my response')}</a>${qrs.length?`<div class="qr-links"><h3>${ptr(e,'QR de entrada','Entry QR')}</h3>${qrs.map(q=>`<a href="/q/${q.token}">${escape(q.name)}</a>`).join('')}</div>`:''}</div>`);
+ applyAppearance(e.appearance,e.brand);click('calendar',()=>openCalendarMenu(e));
+}
+function freeRsvp(e,endpoint,guest=null){
+ const t=eventTexts(e),requestId=crypto.randomUUID(),existing=guest?.members||[];
+ const fields=field('name',ptr(e,'Qual é o seu nome?','What is your name?'),'text',guest?.name||'')+select('response_status',ptr(e,'Você poderá comparecer?','Will you attend?'),[['yes',t.yes_button],['no',t.no_button],['pending',ptr(e,'Ainda não sei','Not sure yet')]],guest?.response_status||'yes')+`<label id="members-label"><span class="field-label">${ptr(e,'Quem vai com você?','Who is attending?')}</span><textarea name="members" placeholder="${ptr(e,'Uma pessoa por linha. Use “; criança” para criança.','One person per line. Use “; child” for a child.')}">${escape(existing.length?existing.filter(m=>m.attendance_status!=='no').map(m=>`${m.name}${m.person_type==='child'?'; criança':''}`).join('\n'):guest?.name||'')}</textarea><small class="field-hint">${ptr(e,`Limite de ${e.max_people} pessoa(s).`,`Limit: ${e.max_people} people.`)}</small></label>`+publicOptionalFields(e,guest||{});
+ app.innerHTML=publicFrame(e,`<p class="rsvp-welcome">${escape(e.welcome_message||t.intro)}</p>${form('public-rsvp',fields,ptr(e,'Enviar resposta','Submit RSVP'))}`);applyAppearance(e.appearance,e.brand);
+ const formEl=document.querySelector('#public-rsvp');mountTurnstile(formEl,e.turnstile_sitekey);const name=formEl.querySelector('[name=name]'),members=formEl.querySelector('[name=members]');let auto=!members.value.trim()||members.value.trim()===name.value.trim();name.oninput=()=>{if(auto)members.value=name.value;};members.oninput=()=>{auto=!members.value.trim()||members.value.trim()===name.value.trim();};
+ submit('public-rsvp',async b=>{const status=b.response_status;let list=parseMemberLines(b.members).map(m=>({...m,attendance_status:status==='yes'?'yes':status}));if(!list.length)list=[{name:b.name,person_type:'adult',attendance_status:status}];b.members=list;b.creation_request_id=requestId;if(guest?.token)b.token=guest.token;try{const result=await api(endpoint,'POST',b);publicSuccess(e,result.guest);}catch(err){resetTurnstile(formEl);throw Error(publicError(err.message,e));}});
+}
+function listRsvp(e,endpoint,g){
+ const t=eventTexts(e),flex=e.list_behavior==='flexible',members=g.members||[];
+ const memberRows=members.map(m=>`<div class="public-person"><div><strong>${escape(m.name)}</strong><small>${m.person_type==='child'?ptr(e,'Criança','Child'):ptr(e,'Adulto','Adult')}</small></div><select data-member-status="${m.id}"><option value="yes" ${m.attendance_status==='yes'?'selected':''}>${ptr(e,'Vai','Attending')}</option><option value="no" ${m.attendance_status==='no'?'selected':''}>${ptr(e,'Não vai','Not attending')}</option><option value="pending" ${m.attendance_status==='pending'?'selected':''}>${ptr(e,'Pendente','Pending')}</option></select></div>`).join('');
+ const extra=flex?`<label><span class="field-label">${ptr(e,'Adicionar acompanhantes','Add guests')}</span><textarea name="new_members" placeholder="${ptr(e,'Ana; adulto\\nBia; criança','Ana; adult\\nBia; child')}"></textarea><small class="field-hint">${ptr(e,`Limite total: ${g.max_people}. Adultos: ${g.max_adults_allowed??'sem limite específico'} · Crianças: ${g.max_children_allowed??'sem limite específico'}.`,`Total limit: ${g.max_people}. Adults: ${g.max_adults_allowed??'no specific limit'} · Children: ${g.max_children_allowed??'no specific limit'}.`)}</small></label>`:'';
+ app.innerHTML=publicFrame(e,`<p class="rsvp-welcome">${escape(e.welcome_message||t.intro)}</p><div class="public-family-title">${escape(g.group_label||g.name)}</div>${form('public-list',`<div class="public-person-list">${memberRows}</div>${extra}${publicOptionalFields(e,g)}`,ptr(e,'Enviar confirmação','Submit RSVP'))}`);applyAppearance(e.appearance,e.brand);
+ const formEl=document.querySelector('#public-list');mountTurnstile(formEl,e.turnstile_sitekey);
+ submit('public-list',async b=>{const current=members.map(m=>({...m,attendance_status:formEl.querySelector(`[data-member-status="${m.id}"]`).value})),added=flex?parseMemberLines(b.new_members).map(m=>({...m,attendance_status:'yes'})):[];b.members=[...current,...added];b.token=g.token;b.response_status=b.members.some(m=>m.attendance_status==='yes')?'yes':b.members.some(m=>m.attendance_status==='pending')?'pending':'no';try{const result=await api(endpoint,'POST',b);publicSuccess(e,result.guest);}catch(err){resetTurnstile(formEl);throw Error(publicError(err.message,e));}});
 }
 async function publicPage(studio,event){
- const invite=new URL(location.href).searchParams.get('invite'),endpoint=`/api/public/${encodeURIComponent(studio)}/${encodeURIComponent(event)}`;
- const {event:e,guest}=await api(endpoint+(invite?`?invite=${encodeURIComponent(invite)}`:''));
- document.title=`${e.title} · Confirmação de presença`;
- if(e.deadline&&new Date(e.deadline).getTime()<Date.now()){app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card success-card"><span class="eyebrow">Prazo encerrado</span><h1>As confirmações foram encerradas</h1><p>O prazo para responder a este evento terminou em ${escape(formatDate(e.deadline,true))}.</p></div></div>`;applyAppearance(e.appearance,e.brand);return;}
- if(e.rsvp_mode==='list'&&!guest){app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card"><span class="eyebrow">Convite individual</span><h1>${escape(e.title)}</h1><p>Para responder, abra o link individual enviado pelos anfitriões.</p></div></div>`;applyAppearance(e.appearance,e.brand);return;}
- guestEditor(e,guest,`${endpoint}/rsvp`,null,true);
- applyAppearance(e.appearance,e.brand);
+ const invite=new URL(location.href).searchParams.get('invite'),endpoint=`/api/public/${encodeURIComponent(studio)}/${encodeURIComponent(event)}`,result=await api(endpoint+(invite?`?invite=${encodeURIComponent(invite)}`:'')),e=result.event,guest=result.guest;
+ document.documentElement.lang=eventLang(e)==='en'?'en':'pt-BR';document.title=`${e.title} · ${eventLang(e)==='en'?'RSVP':'Confirmação de presença'}`;const t=eventTexts(e);
+ if(e.deadline&&new Date(e.deadline).getTime()<Date.now()){app.innerHTML=publicFrame(e,`<div class="success-card"><h2>${escape(t.closed_title)}</h2><p>${ptr(e,'O prazo para responder a este evento terminou.','The response deadline for this event has passed.')}</p></div>`);applyAppearance(e.appearance,e.brand);return;}
+ if(e.rsvp_mode==='list'&&!guest){app.innerHTML=publicFrame(e,`<p>${ptr(e,'Para responder, abra o link individual enviado pelos anfitriões.','Open the private invitation link sent by the hosts to RSVP.')}</p>`);applyAppearance(e.appearance,e.brand);return;}
+ if(e.rsvp_mode==='list')listRsvp(e,`${endpoint}/rsvp`,guest);else freeRsvp(e,`${endpoint}/rsvp`,guest);
 }
-function applyAppearance(a={},brand={}){
- const color=/^#[a-f0-9]{6}$/i.test(a?.color)?a.color:/^#[a-f0-9]{6}$/i.test(brand?.color)?brand.color:null;
- if(color)document.documentElement.style.setProperty('--accent',color);
- if(/^\/media\/[a-f0-9-]+$/.test(a?.background)){app.style.backgroundImage=`linear-gradient(rgba(255,255,255,.84),rgba(255,255,255,.9)),url("${a.background}")`;app.classList.add('event-background');}
+function applyAppearance(raw={},brand={}){
+ const a={...DEFAULT_APPEARANCE,...raw},brandColor=/^#[a-f0-9]{6}$/i.test(brand?.color||'')?brand.color:'#a66f73';if(!/^#[a-f0-9]{6}$/i.test(a.button_color||''))a.button_color=brandColor;
+ const root=document.documentElement,vars={accent:a.button_color,eventBg:a.background_color,eventCard:a.card_color,eventText:a.text_color,eventMuted:a.muted_color,eventButtonText:a.button_text_color,eventRadius:`${Number(a.card_radius)||22}px`,eventBlur:`${Number(a.card_blur)||0}px`,eventCardOpacity:String(Number(a.card_opacity)||.96),eventOverlayOpacity:String(Number(a.overlay_opacity)||0)};
+ for(const [k,v] of Object.entries(vars))root.style.setProperty(`--${k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase())}`,v);
+ const shell=document.querySelector('.rsvp-shell');if(!shell)return;shell.classList.toggle('event-card-glass',a.card_style==='glass');shell.classList.toggle('event-card-solid',a.card_style==='solid');shell.querySelector('.event-media-layer')?.remove();
+ if(a.background_url&&/^\/media\/[a-f0-9-]+$/.test(a.background_url)){const layer=document.createElement('div');layer.className='event-media-layer';if(a.background_type==='video'){const v=document.createElement('video');v.src=a.background_url;v.autoplay=true;v.muted=true;v.loop=true;v.playsInline=true;layer.append(v);}else{const img=document.createElement('img');img.src=a.background_url;img.alt='';layer.append(img);}layer.dataset.position=a.background_position||'center';shell.prepend(layer);}
 }
-
 async function qrPage(raw){
- const q=await api(`/api/q/${encodeURIComponent(raw)}`);
- document.title=`QR de entrada · ${q.event_title}`;
- app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card qr-card"><span class="eyebrow">Entrada no evento</span><h1>${escape(q.event_title)}</h1><p class="qr-name">${escape(q.name)}</p><div class="qr-frame"><img class="qr" id="qr" alt="QR de entrada"></div><span class="status-chip ${q.checked_in?'success':'neutral'}">${q.checked_in?'Entrada já registrada':'Pronto para apresentar'}</span><p class="muted">${q.checked_in?'Este QR já foi utilizado no check-in.':'Apresente este QR na entrada do evento.'}</p></div></div>`;
- document.querySelector('#qr').src=await QRCode.toDataURL(location.href,{margin:2,width:460});
+ const q=await api(`/api/q/${encodeURIComponent(raw)}`);document.title=`QR de entrada · ${q.event_title}`;app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card qr-card"><span class="eyebrow">Entrada no evento</span><h1>${escape(q.event_title)}</h1><p class="qr-name">${escape(q.name)}</p><div class="qr-frame"><img class="qr" id="qr" alt="QR de entrada"></div><span class="status-chip ${q.checked_in?'success':'neutral'}">${q.checked_in?'Entrada já registrada':'Pronto para apresentar'}</span><p class="muted">${q.checked_in?'Este QR já foi utilizado no check-in.':'Apresente este QR na entrada do evento.'}</p></div></div>`;document.querySelector('#qr').src=await QRCode.toDataURL(location.href,{margin:2,width:460});
 }
-
 async function clientPage(raw){
- const {event:e,guests,permissions}=await api(`/api/cliente/${encodeURIComponent(raw)}`);
- const yes=guests.filter(g=>g.response_status==='yes'),people=yes.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes').length,0),pending=guests.filter(g=>g.response_status==='pending').length;
+ const endpoint=`/api/cliente/${encodeURIComponent(raw)}`,data=await api(endpoint),e=data.event,guests=data.guests,permissions=data.permissions,yes=guests.filter(g=>g.response_status==='yes'),people=yes.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes').length,0),pending=guests.filter(g=>g.response_status==='pending').length,a=eventAppearance(e),texts=eventTexts(e),extra=eventExtra(e);
  document.title=`${e.title} · Painel do evento`;
- app.innerHTML=`<div class="client-shell"><section class="client-head"><span class="eyebrow">Painel privado do evento</span><h1>${escape(e.title)}</h1><p>Resumo das confirmações compartilhado pela profissional responsável.</p></section><section class="summary-grid"><article><span>Convites</span><strong>${guests.length}</strong><small>na lista</small></article><article><span>Confirmados</span><strong>${people}</strong><small>pessoas</small></article><article><span>Pendentes</span><strong>${pending}</strong><small>respostas</small></article></section><div class="card section-card"><div class="section-row"><div><h2>Lista de convidados</h2><p>${permissions.manage_guests?'Você pode abrir e ajustar as respostas autorizadas.':'Visualização somente para acompanhamento.'}</p></div></div><div class="scroll"><table><thead><tr><th>Nome</th><th>Presença</th><th>Pessoas</th><th>Mensagem</th>${permissions.manage_guests?'<th></th>':''}</tr></thead><tbody>${guests.map(g=>`<tr><td><strong>${escape(g.name)}</strong></td><td><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span></td><td>${g.members.filter(m=>m.attendance_status==='yes').length}</td><td>${escape(g.message||'')}</td>${permissions.manage_guests?`<td><button class="secondary small" data-client-edit="${g.id}">Editar</button></td>`:''}</tr>`).join('')}</tbody></table></div>${guests.length?'':'<div class="empty-state compact"><p>Nenhum convidado cadastrado ainda.</p></div>'}</div></div>`;
- document.querySelectorAll('[data-client-edit]').forEach(btn=>btn.addEventListener('click',()=>guestEditor(e,guests.find(g=>g.id===btn.dataset.clientEdit),`/api/cliente/${encodeURIComponent(raw)}/guests/${btn.dataset.clientEdit}`,()=>clientPage(raw),'client')));
+ app.innerHTML=`<div class="client-shell"><section class="client-head"><span class="eyebrow">Painel privado do evento</span><h1>${escape(e.title)}</h1><p>Resumo compartilhado pela profissional responsável.</p></section><section class="summary-grid"><article><span>Convites</span><strong>${guests.length}</strong><small>na lista</small></article><article><span>Confirmados</span><strong>${people}</strong><small>pessoas</small></article><article><span>Pendentes</span><strong>${pending}</strong><small>respostas</small></article></section><div class="card section-card"><div class="section-row"><div><h2>Lista de convidados</h2><p>${permissions.manage_guests?'Você pode adicionar e ajustar convidados.':'Visualização para acompanhamento.'}</p></div><div class="row">${permissions.manage_guests?'<button class="secondary small" id="client-add">Adicionar família</button>':''}${permissions.export_guests?'<button class="secondary small" id="client-export">Exportar CSV</button>':''}</div></div><div class="scroll"><table><thead><tr><th>Família</th><th>Status</th><th>Pessoas</th>${permissions.view_messages?'<th>Mensagem</th>':''}${permissions.manage_guests?'<th></th>':''}</tr></thead><tbody>${guests.map(g=>`<tr><td><strong>${escape(g.group_label||g.name)}</strong></td><td><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span></td><td>${g.members.filter(m=>m.attendance_status==='yes').length}</td>${permissions.view_messages?`<td>${escape(g.message||'')}</td>`:''}${permissions.manage_guests?`<td><div class="table-actions"><button class="secondary small" data-client-edit="${g.id}">Editar</button><button class="quiet-danger small" data-client-delete="${g.id}">Lixeira</button></div></td>`:''}</tr>`).join('')}</tbody></table></div></div>${(permissions.manage_event_details||permissions.manage_appearance||permissions.manage_texts)?`<section class="client-settings-grid">${permissions.manage_event_details?`<div class="card section-card"><h2>Dados do evento</h2>${form('client-event',field('title','Nome do evento','text',e.title)+field('event_date','Data e hora','datetime-local',toLocalInput(e.event_date),false)+field('location','Local','text',e.location||'',false)+field('deadline','Prazo','datetime-local',toLocalInput(e.deadline),false)+`<div class="permission-list">${[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="extra_${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar dados')}</div>`:''}${permissions.manage_appearance?`<div class="card section-card"><h2>Aparência</h2>${form('client-appearance',appearanceFields(a),'Salvar aparência')}</div>`:''}${permissions.manage_texts?`<div class="card section-card"><h2>Textos</h2>${form('client-texts',Object.entries({eyebrow:'Rótulo',intro:'Introdução',yes_button:'Botão “sim”',no_button:'Botão “não”',success_title:'Título de sucesso',success_message:'Mensagem de sucesso',decline_title:'Título de recusa',decline_message:'Mensagem de recusa',message_label:'Título da mensagem',message_placeholder:'Placeholder da mensagem',calendar_button:'Botão agenda',back_button:'Botão voltar',closed_title:'Prazo encerrado'}).map(([k,l])=>field(k,l,'text',texts[k]||'',false)).join('')+`<label><span class="field-label">Mensagem de boas-vindas</span><textarea name="welcome_message">${escape(e.welcome_message||'')}</textarea></label>`,'Salvar textos')}</div>`:''}</section>`:''}</div>`;
+ click('client-export',()=>downloadCSV(guests));click('client-add',()=>guestInternalEditor(e,null,`${endpoint}/guests`,()=>clientPage(raw),'client'));document.querySelectorAll('[data-client-edit]').forEach(btn=>btn.onclick=()=>guestInternalEditor(e,guests.find(g=>g.id===btn.dataset.clientEdit),`${endpoint}/guests/${btn.dataset.clientEdit}`,()=>clientPage(raw),'client'));document.querySelectorAll('[data-client-delete]').forEach(btn=>btn.onclick=async()=>{if(!confirm('Enviar esta família para a lixeira?'))return;await api(`${endpoint}/guests/${btn.dataset.clientDelete}`,'DELETE');await clientPage(raw);});
+ submit('client-event',async(_,formEl)=>{const fd=new FormData(formEl),extra_fields={};for(const k of Object.keys(DEFAULT_EXTRA_FIELDS))extra_fields[k]=fd.has(`extra_${k}`);await api(`${endpoint}/event`,'PATCH',{title:fd.get('title'),event_date:localToIso(fd.get('event_date')),location:fd.get('location'),deadline:localToIso(fd.get('deadline')),extra_fields});notice('Dados atualizados.');});
+ submit('client-appearance',async(_,formEl)=>{await api(`${endpoint}/event`,'PATCH',{appearance:collectAppearance(formEl,a)});notice('Aparência atualizada.');});
+ submit('client-texts',async(_,formEl)=>{const fd=new FormData(formEl),welcome_message=fd.get('welcome_message'),public_texts=Object.fromEntries([...fd.entries()].filter(([k])=>k!=='welcome_message'));await api(`${endpoint}/event`,'PATCH',{welcome_message,public_texts});notice('Textos atualizados.');});
 }
 
 async function finances(){
