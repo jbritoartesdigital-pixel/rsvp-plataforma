@@ -73,7 +73,7 @@ export async function authRoutes(request,env,path) {
   const b=await body(request),u=await one(env,'SELECT id,email FROM users WHERE email=?',text(b.email,254).toLowerCase());
   if(u && env.MAILER_URL && env.MAILER_TOKEN) {
    const raw=token(),challenge=id(); await run(env,'INSERT INTO auth_challenges VALUES(?,?,?,?,?)',challenge,u.id,'reset',await hash(raw),new Date(Date.now()+1800000).toISOString());
-   const res=await fetch(env.MAILER_URL,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${env.MAILER_TOKEN}`},body:JSON.stringify({to:u.email,subject:'Recuperar acesso RSVP',text:`${env.APP_ORIGIN}/app/reset?token=${raw}`})});
+   const res=await fetch(env.MAILER_URL,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${env.MAILER_TOKEN}`},body:JSON.stringify({to:u.email,subject:'Recuperar acesso · Presença Confirmada',text:`${env.APP_ORIGIN}/app/reset?token=${raw}`})});
    if(!res.ok) { await run(env,'DELETE FROM auth_challenges WHERE id=?',challenge); fail(503,'Envio indisponível.'); }
   }
   return json({ok:true,message:'Se houver uma conta e o envio estiver configurado, você receberá um link.'});
@@ -89,7 +89,7 @@ export async function authRoutes(request,env,path) {
  if(path==='/api/passkeys/register/options' && m==='POST') {
   const u=await session(request,env),keys=await all(env,'SELECT id FROM passkeys WHERE user_id=?',u.id);
   await run(env,'DELETE FROM auth_challenges WHERE expires_at<?',now());
-  const options=await generateRegistrationOptions({rpName:'RSVP Plataforma',rpID:env.RP_ID,userID:new TextEncoder().encode(u.id),userName:u.email,attestationType:'none',excludeCredentials:keys.map(k=>({id:k.id})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});
+  const options=await generateRegistrationOptions({rpName:'Presença Confirmada',rpID:env.RP_ID,userID:new TextEncoder().encode(u.id),userName:u.email,attestationType:'none',excludeCredentials:keys.map(k=>({id:k.id})),authenticatorSelection:{residentKey:'required',userVerification:'required'}});
   const challenge=id(); await run(env,'INSERT INTO auth_challenges VALUES(?,?,?,?,?)',challenge,u.id,'register',options.challenge,new Date(Date.now()+300000).toISOString());
   return json({options,challenge_id:challenge});
  }
