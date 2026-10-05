@@ -526,3 +526,6 @@ input.invalid,select.invalid,textarea.invalid{border-color:#b94f61;background:#f
   .guest-actions button,.guest-actions a{width:100%}
   .auth-links{flex-direction:column}
 }
+
+.edit-shell{max-width:700px;margin:0 auto;padding:22px 0 40px}
+.edit-shell .rsvp-card{width:100%;margin:0 auto}
