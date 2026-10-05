@@ -1,5 +1,5 @@
 import {fail,now,id,token,stmt,one,all,run,body,text,slug,choice,integer,date,safeObject,audit,json,limit} from './core.js';
-import {session} from './auth.js';
+import {session,owner} from './auth.js';
 
 const DEFAULT_EXTRA_FIELDS={phone:true,dietary:true,notes:false,message:true};
 const DEFAULT_CLIENT_PERMISSIONS={
@@ -437,7 +437,7 @@ export async function eventsRoutes(request,env,path,url) {
   const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
   if(method==='GET')return json({studio:u.studio});
   if(method==='PATCH'){
-   const b=await body(request);
+   owner(u);const b=await body(request);
    await run(env,'UPDATE studios SET name=?,whatsapp=?,brand=? WHERE id=?',text(b.name??u.studio.name),text(b.whatsapp??u.studio.whatsapp,40),safeObject(b.brand||{}),u.studio_id);
    await audit(env,u.studio_id,u.id,'brand_updated');return json({ok:true});
   }
