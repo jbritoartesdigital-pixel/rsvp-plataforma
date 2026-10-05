@@ -1,20 +1,20 @@
 :root{
   font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   color:#27222a;
-  background:#fbf9fa;
-  --accent:#6f4d68;
-  --accent-dark:#40283e;
-  --accent-soft:#f1eaf0;
-  --ink:#27222a;
-  --muted:#746d76;
-  --line:#e7e0e5;
+  background:#fcf8f7;
+  --accent:#a66f73;
+  --accent-dark:#6d454a;
+  --accent-soft:#f6eceb;
+  --ink:#2f292b;
+  --muted:#786f71;
+  --line:#eadfdf;
   --surface:#ffffff;
-  --surface-soft:#f7f3f6;
-  --success:#38634f;
+  --surface-soft:#faf4f3;
+  --success:#4e6c5a;
 }
 *{box-sizing:border-box}
 html{background:#fbf9fa}
-body{margin:0;background:#fbf9fa;color:var(--ink)}
+body{margin:0;background:#fcf8f7;color:var(--ink)}
 a{color:var(--accent);text-underline-offset:3px}
 header{
   width:100%;
@@ -106,10 +106,10 @@ button,.button{
 }
 button:disabled{opacity:.5;cursor:wait}
 button.secondary,.button.secondary{
-  background:var(--accent-soft);
+  background:linear-gradient(135deg,#f7eeee,#f1e4e2);
   color:var(--accent-dark);
 }
-.button.primary{background:var(--accent-dark);color:#fff}
+.button.primary{background:linear-gradient(135deg,#7a4f55,#b47c78);color:#fff;box-shadow:0 7px 18px rgba(126,79,85,.14)}
 .button.ghost{
   background:#fff;
   color:var(--accent-dark);
@@ -168,14 +168,14 @@ button.secondary,.button.secondary{
   border:1px solid #ded4dc;
   border-radius:22px;
   background:#fff;
-  box-shadow:0 14px 36px rgba(54,37,51,.07);
+  box-shadow:0 14px 36px rgba(112,72,75,.08);
 }
 .product-preview:before{
   content:"";
   position:absolute;
   inset:0 0 auto;
   height:5px;
-  background:var(--accent-dark);
+  background:linear-gradient(90deg,#7b5157,#b47e78);
 }
 .preview-head{
   display:flex;
@@ -278,7 +278,7 @@ button.secondary,.button.secondary{
   display:grid;
   gap:17px;
   border-radius:20px;
-  background:var(--accent-dark);
+  background:linear-gradient(135deg,#6f474d,#a96f70);
 }
 .home-cta .hero-kicker{color:#d9c8d5}
 .home-cta h2{margin:8px 0 0;color:#fff}
@@ -306,8 +306,8 @@ button.secondary,.button.secondary{
   background:#fff;
 }
 .plan-featured{
-  border:2px solid var(--accent-dark);
-  background:#fdfbfc;
+  border:2px solid #b9807b;
+  background:linear-gradient(180deg,#fffdfc,#fbf5f4);
 }
 .plan-top{
   display:flex;
@@ -324,7 +324,7 @@ button.secondary,.button.secondary{
   font-size:10px;
   font-weight:800;
 }
-.plan-featured .plan-badge{background:var(--accent-dark);color:#fff}
+.plan-featured .plan-badge{background:linear-gradient(135deg,#7a4f55,#b47c78);color:#fff}
 .plan-type{
   color:#8b8189;
   font-size:9px;
@@ -480,4 +480,41 @@ details{margin:12px 0}
   .plan-card{padding:21px}
   .plan-card h2{font-size:22px}
   .plan-price{font-size:28px}
+}
+
+
+/* Rosé gold brand polish */
+.logo strong{color:#6d454a}
+.logo-word{color:#b07a75}
+.product-preview,.feature-card,.plan-card,.card{
+  box-shadow:0 10px 28px rgba(132,91,91,.055);
+}
+.product-preview,.plan-card,.feature-card{
+  border-color:#ead9d7;
+}
+.hero-copy h1 span{color:#8d5a60}
+.plan-featured:before{
+  content:"";
+  position:absolute;
+  left:18px;
+  right:18px;
+  top:-2px;
+  height:3px;
+  border-radius:0 0 6px 6px;
+  background:linear-gradient(90deg,#9c6569,#d0a394,#a96f70);
+}
+.home-cta{
+  background:linear-gradient(135deg,#684349,#8f5b5f);
+}
+.home-cta .button{
+  background:#fffaf8;
+  color:#70484d;
+}
+nav .nav-login{
+  border-color:#dfcecc;
+  background:#fffaf9;
+}
+.hero-points span{
+  border:1px solid #ebdddb;
+  background:#f8efee;
 }
