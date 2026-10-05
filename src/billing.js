@@ -32,8 +32,14 @@ export async function signedWebhook(request,env,url,b) {
  if(!/^[a-zA-Z0-9_-]{1,100}$/.test(resource)) fail(400,'Identificador inválido.');
  return resource;
 }
-function verifyPayment(env,p,order) {
- if(String(p.collector_id)!==String(env.MP_COLLECTOR_ID)) fail(400,'Recebedor inválido.');
+async function verifyPayment(env,p,order) {
+ let collector=env.MP_COLLECTOR_ID;
+ if(mpTestMode(env)){
+  const seller=await mp(env,'/users/me');
+  collector=seller?.id;
+  if(!collector)fail(502,'Não foi possível identificar a conta vendedora de teste.');
+ }
+ if(String(p.collector_id)!==String(collector)) fail(400,'Recebedor inválido.');
  if(p.currency_id!=='BRL'||Math.round(Number(p.transaction_amount)*100)!==order.amount_cents) fail(400,'Valor ou moeda inválidos.');
  if(!['approved','pending','in_process','rejected','cancelled','refunded','charged_back','authorized','in_mediation'].includes(p.status)) fail(400,'Status inválido.');
 }
@@ -45,7 +51,7 @@ export function periodEnd(value,grace=0) {
 }
 export async function applyCreditPayment(env,p) {
  const order=await one(env,"SELECT * FROM billing_orders WHERE id=? AND kind='credits'",String(p.external_reference||''));
- if(!order) return; verifyPayment(env,p,order);
+ if(!order) return; await verifyPayment(env,p,order);
  const paymentId=String(p.id),stamp=now(),reversed=['refunded','charged_back','cancelled'].includes(p.status)||Number(p.transaction_amount_refunded)>0;
  const status=reversed?'refunded':p.status;
  // A unique purchase per order prevents multiple approved payments crediting one checkout twice.
@@ -68,7 +74,7 @@ export async function applyInvoice(env,invoice) {
  if(!order || String(subscription.id)!==order.provider_id) return;
  const paymentId=invoice.payment?.id ?? invoice.payment_id;
  if(!paymentId) return; // A scheduled invoice is not an entitlement.
- const p=await mp(env,`/v1/payments/${encodeURIComponent(paymentId)}`); verifyPayment(env,p,order);
+ const p=await mp(env,`/v1/payments/${encodeURIComponent(paymentId)}`); await verifyPayment(env,p,order);
  if(String(p.id)!==String(paymentId)) fail(400,'Pagamento divergente.');
  // Recurring payments can omit external_reference; the invoice and subscription establish the link.
  if(p.external_reference && String(p.external_reference)!==order.id) fail(400,'Referência divergente.');
@@ -90,7 +96,7 @@ async function processWebhook(request,env,url) {
   const p=await mp(env,`/v1/payments/${resource}`); if(String(p.id)!==resource) fail(400,'Pagamento divergente.');
   const invoice=await one(env,'SELECT i.order_id FROM subscription_invoices i WHERE i.payment_id=?',resource);
   if(invoice) {
-   const order=await one(env,'SELECT * FROM billing_orders WHERE id=?',invoice.order_id); verifyPayment(env,p,order);
+   const order=await one(env,'SELECT * FROM billing_orders WHERE id=?',invoice.order_id); await verifyPayment(env,p,order);
    await run(env,"UPDATE payments SET status=CASE WHEN status IN ('refunded','charged_back') THEN status ELSE ? END,updated_at=? WHERE id=?",Number(p.transaction_amount_refunded)>0?'refunded':p.status,now(),resource);
    await recomputeMonthly(env,order);
   } else await applyCreditPayment(env,p);
@@ -118,6 +124,10 @@ export async function billingRoutes(request,env,path,url) {
   const testMode=mpTestMode(env);
 
   let order=await one(env,'SELECT * FROM billing_orders WHERE studio_id=? AND kind=? AND quantity=? AND status=? ORDER BY created_at DESC LIMIT 1',u.studio_id,plan.kind,plan.quantity,'pending');
+  if(testMode&&plan.kind==='credits'&&order?.checkout_url){
+   let legacy=true;try{legacy=new URL(order.checkout_url).hostname!=='sandbox.mercadopago.com';}catch{}
+   if(legacy){await run(env,"UPDATE billing_orders SET status='cancelled' WHERE id=?",order.id);order=null;}
+  }
   if(plan.kind==='monthly' && u.studio.billing_mode==='monthly' && u.studio.subscription_id && !order) fail(409,'Sua assinatura já existe. Cancele antes de contratar outra.');
   if(!order) {
    const switching=u.studio.billing_mode!==plan.kind;
@@ -131,14 +141,10 @@ export async function billingRoutes(request,env,path,url) {
   if(order.checkout_url) return json({checkout_url:order.checkout_url,order_id:order.id});
 
   const notification=`${env.APP_ORIGIN}/api/webhooks/mercadopago`;
-  let payerEmail=u.email;
-  if(testMode&&plan.kind==='monthly') {
-   const digest=await hash(order.id),number=(parseInt(digest.slice(0,8),16)%900000000)+100000000;
-   payerEmail=`test_payer_${number}@testuser.com`;
-  }
+  const payerEmail=testMode?'test@testuser.com':u.email;
   const payload=plan.kind==='credits'?{
    items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],
-   ...(testMode?{}:{payer:{email:u.email}}),
+   payer:{email:payerEmail},
    external_reference:order.id,notification_url:notification,
    back_urls:{success:`${env.APP_ORIGIN}/app/financeiro`,pending:`${env.APP_ORIGIN}/app/financeiro`,failure:`${env.APP_ORIGIN}/app/financeiro`},auto_return:'approved'
   }:{
@@ -148,11 +154,12 @@ export async function billingRoutes(request,env,path,url) {
   };
   const checkoutKey=plan.kind==='monthly'?`${order.id}-${(await hash(payerEmail)).slice(0,16)}`:order.id;
 
-  let result;
+  let result,checkoutUrl;
   try{
    result=await mp(env,plan.kind==='credits'?'/checkout/preferences':'/preapproval','POST',payload,checkoutKey);
-   if(!result.id||!result.init_point) fail(502,'Checkout não retornou um endereço.');
-   const checkout=new URL(result.init_point); if(checkout.protocol!=='https:'||!/(^|\.)mercadopago\.(com|com\.br)$/.test(checkout.hostname)) fail(502,'Endereço de checkout inválido.');
+   checkoutUrl=testMode&&plan.kind==='credits'?(result.sandbox_init_point||result.init_point):result.init_point;
+   if(!result.id||!checkoutUrl) fail(502,'Checkout não retornou um endereço.');
+   const checkout=new URL(checkoutUrl); if(checkout.protocol!=='https:'||!/(^|\.)mercadopago\.(com|com\.br)$/.test(checkout.hostname)) fail(502,'Endereço de checkout inválido.');
   }catch(error){
    await run(env,"UPDATE billing_orders SET status='failed' WHERE id=? AND provider_id IS NULL",order.id);
    throw error;
@@ -174,7 +181,7 @@ export async function billingRoutes(request,env,path,url) {
     monthly_until=CASE WHEN ?='monthly' THEN NULL WHEN ? THEN NULL ELSE monthly_until END
     WHERE id=? AND billing_generation=?`,
     plan.kind,order.generation,plan.kind,plan.kind==='monthly'?String(result.id):null,switching?1:0,plan.kind,switching?1:0,u.studio_id,u.studio.billing_generation),
-   stmt(env,'UPDATE billing_orders SET provider_id=?,checkout_url=? WHERE id=? AND status=?',String(result.id),result.init_point,order.id,'pending')
+   stmt(env,'UPDATE billing_orders SET provider_id=?,checkout_url=? WHERE id=? AND status=?',String(result.id),checkoutUrl,order.id,'pending')
   ]);
   if(!linked[0].meta.changes||!linked[1].meta.changes) {
    if(plan.kind==='monthly')await mp(env,`/preapproval/${encodeURIComponent(result.id)}`,'PUT',{status:'cancelled'}).catch(()=>{});
@@ -182,7 +189,7 @@ export async function billingRoutes(request,env,path,url) {
    fail(409,'A modalidade foi alterada durante o checkout. Atualize a página.');
   }
   await audit(env,u.studio_id,u.id,'checkout',{order_id:order.id,plan:plan.key});
-  return json({checkout_url:result.init_point,order_id:order.id});
+  return json({checkout_url:checkoutUrl,order_id:order.id});
  }
  if(path==='/api/billing/cancel' && request.method==='POST') {
   const u=await session(request,env); owner(u); if(!u.studio) fail(400,'Selecione uma conviteira.');
