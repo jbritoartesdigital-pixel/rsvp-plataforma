@@ -6,7 +6,7 @@ import {adminRoutes} from './admin.js';
 const security={
  'x-content-type-options':'nosniff','referrer-policy':'no-referrer',
  'permissions-policy':'camera=(self), publickey-credentials-get=(self)',
- 'content-security-policy':"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+ 'content-security-policy':"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 export default {
  async fetch(request,env) {
@@ -20,7 +20,7 @@ export default {
    if(path.startsWith('/api/')) {
     response=await authRoutes(request,env,path)||await billingRoutes(request,env,path,url)||await eventsRoutes(request,env,path,url)||await adminRoutes(request,env,path)||json({error:'Rota não encontrada.'},404);
    } else if(path.startsWith('/media/')) {
-    const record=await one(env,"SELECT m.* FROM event_media m JOIN events e ON e.id=m.event_id JOIN studios s ON s.id=m.studio_id WHERE m.id=? AND e.status='active' AND s.status='active'",path.slice(7));
+    const record=await one(env,"SELECT m.* FROM event_media m JOIN events e ON e.id=m.event_id JOIN studios s ON s.id=m.studio_id WHERE m.id=? AND m.deleted_at IS NULL AND e.status='active' AND s.status='active'",path.slice(7));
     if(!record) fail(404,'Mídia indisponível.'); const object=await env.MEDIA.get(record.object_key); if(!object) fail(404,'Mídia indisponível.');
     response=new Response(object.body,{headers:{'content-type':record.mime_type,'cache-control':'public, max-age=300','etag':object.httpEtag||''}});
    } else response=await env.ASSETS.fetch(request);
