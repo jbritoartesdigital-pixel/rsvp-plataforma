@@ -538,11 +538,73 @@ function publicSuccess(e,guest){
  applyAppearance(e.appearance,e.brand);click('calendar',()=>openCalendarMenu(e));
 }
 function freeRsvp(e,endpoint,guest=null){
- const t=eventTexts(e),requestId=crypto.randomUUID(),existing=guest?.members||[];
- const fields=field('name',t.name_label||ptr(e,'Qual é o seu nome?','What is your name?'),'text',guest?.name||'')+select('response_status',ptr(e,'Você poderá comparecer?','Will you attend?'),[['yes',t.yes_button],['no',t.no_button],['pending',ptr(e,'Ainda não sei','Not sure yet')]],guest?.response_status||'yes')+`<label id="members-label"><span class="field-label">${ptr(e,'Quem vai com você?','Who is attending?')}</span><textarea name="members" placeholder="${ptr(e,'Uma pessoa por linha. Use “; criança” para criança.','One person per line. Use “; child” for a child.')}">${escape(existing.length?existing.filter(m=>m.attendance_status!=='no').map(m=>`${m.name}${m.person_type==='child'?'; criança':''}`).join('\n'):guest?.name||'')}</textarea><small class="field-hint">${ptr(e,`Limite de ${e.max_people} pessoa(s).`,`Limit: ${e.max_people} people.`)}</small></label>`+publicOptionalFields(e,guest||{});
- app.innerHTML=publicFrame(e,`<p class="rsvp-welcome">${escape(e.welcome_message||t.intro)}</p>${form('public-rsvp',fields+`<div id="decline-hint" class="decline-hint" hidden>${escape(t.decline_hint||'')}</div>`,ptr(e,'Enviar resposta','Submit RSVP'))}`);applyAppearance(e.appearance,e.brand);
- const formEl=document.querySelector('#public-rsvp');mountTurnstile(formEl,e.turnstile_sitekey);const name=formEl.querySelector('[name=name]'),members=formEl.querySelector('[name=members]'),status=formEl.querySelector('[name=response_status]'),decline=formEl.querySelector('#decline-hint');let auto=!members.value.trim()||members.value.trim()===name.value.trim();name.oninput=()=>{if(auto)members.value=name.value;};members.oninput=()=>{auto=!members.value.trim()||members.value.trim()===name.value.trim();};const syncStatus=()=>{const yes=status.value==='yes';members.closest('label').hidden=!yes;decline.hidden=status.value!=='no';};status.onchange=syncStatus;syncStatus();
- submit('public-rsvp',async b=>{const status=b.response_status;let list=status==='yes'?parseMemberLines(b.members).map(m=>({...m,attendance_status:'yes'})):[{name:b.name,person_type:'adult',attendance_status:status}];if(!list.length)list=[{name:b.name,person_type:'adult',attendance_status:status}];b.members=list;b.creation_request_id=requestId;if(guest?.token)b.token=guest.token;try{const result=await api(endpoint,'POST',b);publicSuccess(e,result.guest);}catch(err){resetTurnstile(formEl);throw Error(publicError(err.message,e));}});
+ const t=eventTexts(e),requestId=crypto.randomUUID(),limit=Number(e.max_people||1),existing=(guest?.members||[]).filter(m=>m.attendance_status!=='no'),initialStatus=guest?.response_status&&guest.response_status!=='pending'?guest.response_status:'';
+ const primaryName=guest?.name||'',companions=existing.filter((m,i)=>!(i===0&&normalizedName(m.name)===normalizedName(primaryName)));
+ const companionGate=limit<=1
+  ?\`<div class="rsvp-individual-note"><strong>\${ptr(e,'Confirmação individual','Individual RSVP')}</strong><span>\${ptr(e,'Este convite permite confirmar apenas uma pessoa.','This invitation allows only one attendee.')}</span></div>\`
+  :\`<div class="rsvp-companion-gate" id="companion-gate" hidden>
+    <span class="field-label">\${ptr(e,'Você vai levar acompanhante?','Will you bring anyone with you?')}</span>
+    <div class="rsvp-choice-grid" id="companion-choice">
+      <button type="button" data-companion="no">\${ptr(e,'Não, só eu','No, just me')}</button>
+      <button type="button" data-companion="yes">\${ptr(e,'Sim, vou levar','Yes, I will')}</button>
+    </div>
+    <input type="hidden" name="has_companion" value="">
+    <div id="companion-section" class="companion-section" hidden>
+      <div class="companion-section-head"><div><strong>\${ptr(e,'Quem vai com você?','Who is coming with you?')}</strong><span>\${ptr(e,'Adicione uma pessoa por campo.','Add one person per field.')}</span></div><b id="companion-count">0/\${Math.max(0,limit-1)}</b></div>
+      <div id="free-members" class="free-members"></div>
+      <div class="companion-actions">
+        <button type="button" class="secondary small" id="add-adult">\${ptr(e,'+ Adulto','+ Adult')}</button>
+        <button type="button" class="secondary small" id="add-child">\${ptr(e,'+ Criança','+ Child')}</button>
+      </div>
+    </div>
+   </div>\`;
+ const fields=field('name',t.name_label||ptr(e,'Qual é o seu nome?','What is your name?'),'text',primaryName)+
+  \`<div class="rsvp-question"><span class="field-label">\${ptr(e,'Você poderá comparecer?','Will you attend?')}</span><div class="rsvp-choice-grid" id="attendance-choice"><button type="button" data-attendance="yes">\${escape(t.yes_button||ptr(e,'Sim, estarei presente','Yes, I will attend'))}</button><button type="button" data-attendance="no">\${escape(t.no_button||ptr(e,'Não poderei ir','I cannot attend'))}</button></div><input type="hidden" name="response_status" value="\${escape(initialStatus)}"></div>
+   <div id="decline-hint" class="decline-hint" hidden>\${escape(t.decline_hint||'')}</div>
+   <div id="attending-section" hidden>\${companionGate}</div>\`+publicOptionalFields(e,guest||{});
+ app.innerHTML=publicFrame(e,\`<p class="rsvp-welcome">\${escape(e.welcome_message||t.intro)}</p>\${form('public-rsvp',fields,ptr(e,'Enviar confirmação','Submit RSVP'))}\`);applyAppearance(e.appearance,e.brand);
+ const formEl=document.querySelector('#public-rsvp');mountTurnstile(formEl,e.turnstile_sitekey);
+ const status=formEl.querySelector('[name=response_status]'),attending=formEl.querySelector('#attending-section'),decline=formEl.querySelector('#decline-hint'),companionStatus=formEl.querySelector('[name=has_companion]'),companionGateEl=formEl.querySelector('#companion-gate'),companionSection=formEl.querySelector('#companion-section'),membersRoot=formEl.querySelector('#free-members'),countEl=formEl.querySelector('#companion-count');
+ const syncCount=()=>{if(!membersRoot||!countEl)return;countEl.textContent=\`\${membersRoot.querySelectorAll('[data-companion-row]').length}/\${Math.max(0,limit-1)}\`;};
+ const addCompanion=(type,value='')=>{
+  if(!membersRoot)return;
+  const current=membersRoot.querySelectorAll('[data-companion-row]').length;
+  if(current>=Math.max(0,limit-1)){notice(ptr(e,\`O convite permite no máximo \${limit} pessoa(s), contando você.\`,\`This invitation allows up to \${limit} people including you.\`));return;}
+  const row=document.createElement('label');row.className='companion-row';row.dataset.companionRow='1';
+  row.innerHTML=\`<span class="field-label">\${type==='child'?ptr(e,'Nome da criança','Child name'):ptr(e,'Nome do adulto','Adult name')}</span><div class="companion-input-row"><input class="companion-name" data-type="\${type}" value="\${escape(value)}" placeholder="\${type==='child'?ptr(e,'Nome da criança','Child name'):ptr(e,'Nome do acompanhante','Companion name')}"><button type="button" class="companion-remove" aria-label="\${ptr(e,'Remover acompanhante','Remove guest')}">×</button></div>\`;
+  row.querySelector('.companion-remove').onclick=()=>{row.remove();syncCount();};
+  membersRoot.append(row);syncCount();
+ };
+ const setAttendance=value=>{
+  status.value=value;formEl.querySelectorAll('[data-attendance]').forEach(b=>b.classList.toggle('active',b.dataset.attendance===value));
+  const yes=value==='yes';attending.hidden=!yes;decline.hidden=value!=='no';
+  if(yes&&companionGateEl)companionGateEl.hidden=false;
+  if(!yes&&companionStatus){companionStatus.value='';formEl.querySelectorAll('[data-companion]').forEach(b=>b.classList.remove('active'));if(companionSection)companionSection.hidden=true;}
+ };
+ const setCompanion=value=>{
+  if(!companionStatus)return;companionStatus.value=value;formEl.querySelectorAll('[data-companion]').forEach(b=>b.classList.toggle('active',b.dataset.companion===value));if(companionSection)companionSection.hidden=value!=='yes';
+  if(value==='yes'&&membersRoot&&!membersRoot.children.length)addCompanion('adult');
+ };
+ formEl.querySelectorAll('[data-attendance]').forEach(b=>b.onclick=()=>setAttendance(b.dataset.attendance));
+ formEl.querySelectorAll('[data-companion]').forEach(b=>b.onclick=()=>setCompanion(b.dataset.companion));
+ formEl.querySelector('#add-adult')?.addEventListener('click',()=>addCompanion('adult'));
+ formEl.querySelector('#add-child')?.addEventListener('click',()=>addCompanion('child'));
+ companions.forEach(m=>addCompanion(m.person_type==='child'?'child':'adult',m.name));
+ if(initialStatus)setAttendance(initialStatus);
+ if(initialStatus==='yes'&&companionStatus&&companions.length)setCompanion('yes');
+ else if(initialStatus==='yes'&&companionStatus&&!companions.length)setCompanion('no');
+ submit('public-rsvp',async b=>{
+  if(!b.response_status)throw Error(ptr(e,'Escolha se você poderá comparecer.','Please choose whether you will attend.'));
+  if(b.response_status==='yes'&&limit>1&&!b.has_companion)throw Error(ptr(e,'Informe se você vai levar acompanhante.','Please tell us whether you are bringing anyone.'));
+  const companionInputs=[...formEl.querySelectorAll('.companion-name')],blank=companionInputs.find(i=>!i.value.trim());
+  if(b.response_status==='yes'&&b.has_companion==='yes'&&blank){blank.focus();throw Error(ptr(e,'Preencha ou remova o acompanhante que ficou sem nome.','Fill in or remove the guest with no name.'));}
+  const companionMembers=b.response_status==='yes'&&b.has_companion==='yes'?companionInputs.map(i=>({name:i.value.trim(),person_type:i.dataset.type,attendance_status:'yes'})).filter(x=>x.name):[];
+  if(b.response_status==='yes'&&b.has_companion==='yes'&&!companionMembers.length)throw Error(ptr(e,'Adicione pelo menos um acompanhante.','Add at least one companion.'));
+  b.members=b.response_status==='yes'?[{name:b.name,person_type:'adult',attendance_status:'yes'},...companionMembers]:[{name:b.name,person_type:'adult',attendance_status:'no'}];
+  if(b.members.length>limit)throw Error(ptr(e,\`O limite deste convite é de \${limit} pessoa(s).\`,\`This invitation allows up to \${limit} people.\`));
+  delete b.has_companion;b.creation_request_id=requestId;if(guest?.token)b.token=guest.token;
+  try{const result=await api(endpoint,'POST',b);publicSuccess(e,result.guest);}catch(err){resetTurnstile(formEl);throw Error(publicError(err.message,e));}
+ });
 }
 function listRsvp(e,endpoint,g){
  const t=eventTexts(e),flex=e.list_behavior==='flexible',members=g.members||[];
