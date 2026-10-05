@@ -231,7 +231,7 @@ test('creation_request_id torna envio livre idempotente sem duplicar família ou
 
 test('permissões granulares salvam sem trocar link; rotação explícita invalida o anterior',async()=>{
  const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
- const e=(await f.request('/api/events','POST',{title:'Cliente',slug:'cliente'},a.cookie)).body.event;
+ const created=await f.request('/api/events','POST',{title:'Cliente',slug:'cliente-evento'},a.cookie);assert.equal(created.status,201,JSON.stringify(created.body));const e=created.body.event;
  const originalToken=e.client_token;
  assert.equal((await f.request(`/api/cliente/${originalToken}/guests`,'POST',{name:'Bloqueado'})).status,403);
 
