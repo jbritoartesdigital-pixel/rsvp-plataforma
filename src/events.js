@@ -132,12 +132,13 @@ async function saveRsvp(env,e,g,b,{actor=null,source='public',allowStructure=fal
   status=clean.some(m=>m.attendance_status==='yes')?'yes':clean.some(m=>m.attendance_status==='pending')?'pending':'no';
  }
  const phone=text(b.phone??g.phone,40,false);
+ const respondedAt=source==='public'?stamp:(g.responded_at||null);
  const message=text(b.message??g.message,2000,false);
  const dietary=text(b.dietary??g.dietary,500,false);
  const notes=text(b.notes??g.notes,1000,false);
 
  const queries=[stmt(env,`UPDATE guests SET name=?,group_label=?,phone=?,response_status=?,max_people=?,max_adults_allowed=?,max_children_allowed=?,message=?,dietary=?,notes=?,responded_at=?,updated_at=?,qr_token=CASE WHEN ?='yes' AND (SELECT checkin_mode FROM events WHERE id=guests.event_id)='family' THEN CASE WHEN response_status='yes' AND qr_token IS NOT NULL THEN qr_token ELSE ? END ELSE NULL END WHERE id=? AND event_id=?`,
-  name,groupLabel,phone,status,maxPeople,maxAdults,maxChildren,message,dietary,notes,stamp,stamp,status,token(),g.id,e.id)];
+  name,groupLabel,phone,status,maxPeople,maxAdults,maxChildren,message,dietary,notes,respondedAt,stamp,status,token(),g.id,e.id)];
 
  const retained=new Set(clean.map(m=>m.id));
  for(const m of old)if(!retained.has(m.id))queries.push(stmt(env,"UPDATE guest_members SET attendance_status='no',qr_token=NULL WHERE id=? AND guest_id=?",m.id,g.id));
