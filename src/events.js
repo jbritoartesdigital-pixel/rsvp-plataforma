@@ -33,6 +33,7 @@ const nullableLimit=(value)=>{
  if(value===undefined||value===null||value==='')return null;
  return integer(value,0,100);
 };
+const memberKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 
 export async function tenantEvent(env,user,eventId) {
  if(!user.studio_id) fail(400,'Selecione uma conviteira.');
@@ -97,6 +98,8 @@ async function saveRsvp(env,e,g,b,{actor=null,source='public',allowStructure=fal
  const incoming=Array.isArray(b.members)?b.members:[];
  const old=await all(env,'SELECT * FROM guest_members WHERE guest_id=? ORDER BY rowid',g.id);
  const oldById=new Map(old.map(m=>[m.id,m]));
+ const byName=new Map();
+ for(const member of old){const key=memberKey(member.name);if(key)byName.set(key,byName.has(key)?null:member);}
  let base=incoming;
 
  if(!base.length){
@@ -105,7 +108,7 @@ async function saveRsvp(env,e,g,b,{actor=null,source='public',allowStructure=fal
  }
 
  const clean=base.map(m=>{
-  const known=m.id?oldById.get(String(m.id)):null;
+  const known=m.id?oldById.get(String(m.id)):(m.name?byName.get(memberKey(m.name)):null);
   if(m.id&&!known)fail(400,'Pessoa inválida.');
   if(!known&&e.rsvp_mode==='list'&&e.list_behavior==='strict'&&!allowStructure)fail(403,'Este convite não permite adicionar novas pessoas.');
   const attendance=requested==='no'?'no':requested==='pending'?'pending':choice(m.attendance_status||'yes',['yes','no','pending']);
