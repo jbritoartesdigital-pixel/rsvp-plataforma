@@ -410,6 +410,32 @@ async function showHistory(base){
  const {audit}=await api(`${base}/audit`),labels={create_event:'Evento criado',update_event:'Evento atualizado',duplicate_event:'Evento duplicado',guest_created:'Convidado cadastrado',guest_updated:'Convidado editado',guest_deleted:'Convidado enviado à lixeira',guest_restored:'Convidado restaurado',guest_bulk_deleted:'Convidados enviados à lixeira',guest_bulk_restored:'Convidados restaurados',rsvp_submitted:'Confirmação enviada',media_uploaded:'Mídia enviada',media_deleted:'Mídia removida',checkin:'Check-in',client_link_reset:'Link do cliente renovado',client_event_updated:'Cliente editou o evento'};
  openModal('Histórico do evento',audit.length?`<div class="history-list">${audit.map(x=>`<div class="history-item"><div><strong>${escape(labels[x.action]||x.action)}</strong><span>${escape(x.actor_name||'Sistema / convidado')}</span></div><time>${escape(formatDate(x.created_at,true))}</time></div>`).join('')}</div>`:'<div class="empty-state compact"><p>Nenhuma alteração registrada ainda.</p></div>');
 }
+function openBulkAdd(e,endpoint,done){
+ const modal=openModal('Adicionar vários convidados',form('bulk-add','<label><span class="field-label">Um nome por linha<b class="required-mark">*</b></span><textarea name="names" rows="12" required placeholder="Maria Silva\\nJoão Souza\\nFamília Costa"></textarea><small class="field-hint">Cada nome entra como uma família de 1 adulto pendente. Você pode editar e agrupar depois.</small></label>','Cadastrar lista'));
+ submit('bulk-add',async b=>{
+  const names=String(b.names||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  if(!names.length)throw Error('Informe pelo menos um nome.');
+  if(names.length>300)throw Error('Adicione até 300 nomes por vez.');
+  await api(endpoint,'POST',{guests:names.map(name=>({name,max_people:e.max_people}))});
+  modal.closeModal();await done();
+ });
+}
+function showMessages(guests){
+ const messages=guests.filter(g=>g.message).map(g=>({name:g.group_label||g.name,message:g.message,date:g.responded_at}));
+ const modal=openModal('Mensagens dos convidados',`<input id="message-search" placeholder="Buscar mensagem ou nome">${messages.length?`<div class="message-grid" id="message-grid">${messages.map(m=>`<article class="message-card" data-message="${escape(normalizedName(m.name+' '+m.message))}"><blockquote>“${escape(m.message)}”</blockquote><footer><strong>${escape(m.name)}</strong>${m.date?` · ${escape(formatDate(m.date,true))}`:''}</footer></article>`).join('')}</div>`:'<div class="empty-state compact"><p>Ainda não há mensagens.</p></div>'}`);
+ const search=modal.querySelector('#message-search');
+ if(search)search.oninput=()=>{const q=normalizedName(search.value);modal.querySelectorAll('[data-message]').forEach(x=>x.hidden=!!q&&!x.dataset.message.includes(q));};
+}
+function exportEventPdf(e,guests,studioName){
+ const win=window.open('','_blank');
+ if(!win){notice('O navegador bloqueou a janela do PDF. Libere pop-ups para este site.');return;}
+ const yes=guests.flatMap(g=>g.members).filter(m=>m.attendance_status==='yes'),adults=yes.filter(m=>m.person_type==='adult').length,children=yes.filter(m=>m.person_type==='child').length,messages=guests.filter(g=>g.message);
+ const families=guests.map(g=>`<section class="family"><div class="family-head"><div><h3>${escape(g.group_label||g.name)}</h3>${g.group_label?`<small>Responsável: ${escape(g.name)}</small>`:''}</div><b>${escape(labelStatus(g.response_status))}</b></div>${g.members.map(m=>`<div class="person"><span>${m.attendance_status==='yes'?'✓':m.attendance_status==='no'?'×':'•'} ${escape(m.name)} <small>· ${m.person_type==='child'?'criança':'adulto'}</small></span><b>${escape(labelStatus(m.attendance_status))}</b></div>`).join('')}${g.dietary?`<p><strong>Restrição:</strong> ${escape(g.dietary)}</p>`:''}${g.notes?`<p><strong>Observação:</strong> ${escape(g.notes)}</p>`:''}</section>`).join('');
+ const notes=messages.map(g=>`<article class="message"><blockquote>“${escape(g.message)}”</blockquote><small>${escape(g.group_label||g.name)}</small></article>`).join('');
+ win.document.open();
+ win.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escape(e.title)} · Lista</title><style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#352d30;margin:0}.head{padding:20px;border:1px solid #e6d8da;border-radius:18px}.brand{font-size:11px;color:#8d6267;text-transform:uppercase;letter-spacing:1px}.head h1{margin:7px 0}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:16px 0}.stat,.family,.message{border:1px solid #eadfe1;border-radius:12px;padding:11px}.stat{text-align:center}.stat b{display:block;font-size:20px;color:#7a4f55}.stat span,small{color:#7d7378;font-size:9px}.family{break-inside:avoid;margin:8px 0}.family-head,.person{display:flex;justify-content:space-between;gap:10px}.family h3{margin:0 0 7px}.person{padding:6px 0;border-top:1px solid #f0e8ea;font-size:10px}.family p{font-size:9px}.message{break-inside:avoid;margin:8px 0}.message blockquote{margin:0 0 7px;font-size:11px}.print{position:fixed;right:15px;bottom:15px;border:0;border-radius:10px;padding:11px 15px;background:#7a4f55;color:#fff}@media print{.print{display:none}}</style></head><body><header class="head"><div class="brand">${escape(studioName||'Presença Confirmada')}</div><h1>${escape(e.title)}</h1><small>${escape(formatDate(e.event_date,true)||'Data não informada')}</small></header><div class="stats"><div class="stat"><b>${yes.length}</b><span>confirmados</span></div><div class="stat"><b>${adults}</b><span>adultos</span></div><div class="stat"><b>${children}</b><span>crianças</span></div><div class="stat"><b>${guests.filter(g=>g.response_status==='pending').length}</b><span>pendentes</span></div></div><h2>Lista de presença</h2>${families||'<p>Nenhum convidado.</p>'}${messages.length?`<h2>Mensagens</h2>${notes}`:''}<button class="print" onclick="window.print()">Salvar / imprimir PDF</button></body></html>`);
+ win.document.close();
+}
 async function eventPage(eventId){
  const base=`/api/events/${eventId}`;
  const results=await Promise.all([api(base),api(`${base}/guests`),api(`${base}/guests?trash=1`),api(`${base}/media`)]),e=results[0].event,guests=markDuplicates(results[1].guests),trash=results[2].guests,media=results[3].media;
