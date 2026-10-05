@@ -721,3 +721,31 @@ body.modal-open{overflow:hidden}
 .event-media-layer[data-position="bottom"][data-x="left"] img,.event-media-layer[data-position="bottom"][data-x="left"] video{object-position:left bottom}
 .event-media-layer[data-position="bottom"][data-x="right"] img,.event-media-layer[data-position="bottom"][data-x="right"] video{object-position:right bottom}
 @media(min-width:720px){.message-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.save-state{margin:8px 0 12px;color:#587362;font-size:10px;font-weight:750}
+.save-state.dirty{color:#9a6a2e}
+.appearance-preview-wrap{margin:14px 0 18px}
+.appearance-preview-wrap>span{display:block;margin-bottom:7px;color:var(--muted);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px}
+.appearance-mini-preview{
+ position:relative;
+ min-height:285px;
+ display:grid;
+ place-items:center;
+ overflow:hidden;
+ padding:18px;
+ border:1px solid var(--line);
+ border-radius:16px;
+ background:var(--mini-bg,#fcf8f7);
+ color:var(--mini-text,#2f292b);
+}
+.appearance-mini-preview .mini-media{position:absolute;inset:0}
+.appearance-mini-preview .mini-media img,.appearance-mini-preview .mini-media video{width:100%;height:100%;object-fit:cover}
+.appearance-mini-preview .mini-overlay{position:absolute;inset:0;background:rgba(255,255,255,.62)}
+.mini-rsvp-card{position:relative;z-index:2;width:min(100%,330px);padding:20px;border-radius:var(--mini-radius,22px);background:color-mix(in srgb,var(--mini-card,#fff) calc(var(--mini-card-opacity,.96) * 100%),transparent);box-shadow:0 12px 35px rgba(60,42,51,.10);text-align:left}
+.mini-rsvp-card small{color:var(--mini-button,#a66f73);font-weight:800}
+.mini-rsvp-card h3{margin:12px 0 7px;color:var(--mini-text,#2f292b)}
+.mini-rsvp-card p{margin:0 0 15px;color:var(--mini-muted,#786f71);font-size:11px}
+.mini-button{display:inline-flex;padding:9px 11px;border-radius:9px;background:var(--mini-button,#a66f73);color:var(--mini-button-text,#fff);font-size:10px;font-weight:800}
+.mini-logo{display:block;max-width:80px;max-height:45px;object-fit:contain;margin-bottom:10px}
+.appearance-mini-preview.event-card-glass .mini-rsvp-card{backdrop-filter:blur(10px)}
+.appearance-mini-preview.event-card-solid .mini-rsvp-card{background:var(--mini-card,#fff)}
