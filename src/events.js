@@ -159,7 +159,8 @@ async function uniqueEventSlug(env,studioId,base) {
  const root=slug(base);
  let candidate=root,index=2;
  while(await one(env,'SELECT id FROM events WHERE studio_id=? AND slug=?',studioId,candidate)){
-  candidate=`${root}-${index++}`.slice(0,64).replace(/-$/,'');
+  const suffix=`-${index++}`,head=root.slice(0,64-suffix.length).replace(/-+$/,'');
+  candidate=`${head}${suffix}`;
  }
  return candidate;
 }
@@ -232,7 +233,7 @@ export async function eventsRoutes(request,env,path,url) {
   return json({name:qr.name,event_title:qr.title,token:match[1],checked_in:!!await one(env,'SELECT id FROM checkins WHERE subject_key=?',qr.subject)});
  }
 
- match=path.match(/^\/api\/cliente\/([^/]+)(?:\/(guests|event)(?:\/([^/]+))?)?$/);
+ match=path.match(/^\/api\/cliente\/([^/]+)(?:\/(guests|event|media)(?:\/([^/]+))?)?$/);
  if(match){
   const e=await one(env,'SELECT e.*,s.name studio_name,s.brand,s.status studio_status FROM events e JOIN studios s ON s.id=e.studio_id WHERE client_token=?',match[1]);
   if(!e||e.studio_status!=='active')fail(404,'Link indisponível.');
@@ -257,6 +258,27 @@ export async function eventsRoutes(request,env,path,url) {
    await run(env,"UPDATE guests SET deleted_at=?,response_status='no',qr_token=NULL,updated_at=? WHERE id=? AND event_id=?",now(),now(),key,e.id);
    await audit(env,e.studio_id,null,'guest_deleted',{event_id:e.id,guest_id:key,source:'client'});
    return json({ok:true});
+  }
+  if(sub==='media'&&permissions.manage_appearance){
+   if(method==='GET')return json({media:await all(env,'SELECT id,mime_type,size_bytes,media_kind,original_name,created_at FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL ORDER BY created_at DESC',e.id,e.studio_id)});
+   if(method==='POST'&&!key){
+    const kind=choice(url.searchParams.get('kind')||request.headers.get('x-media-kind')||'background_image',['background_image','background_video','cover','logo','other']);
+    const mime=request.headers.get('content-type')?.split(';')[0],images=['image/jpeg','image/png','image/webp','image/avif'],videos=['video/mp4','video/webm'],allowed=kind==='background_video'?videos:kind==='other'?[...images,...videos]:images;
+    if(!allowed.includes(mime))fail(400,kind==='background_video'?'Use vídeo MP4 ou WebM.':'Use imagem JPG, PNG, WebP ou AVIF.');
+    const bytes=await request.arrayBuffer(),max=videos.includes(mime)?20*1024*1024:10*1024*1024;if(!bytes.byteLength||bytes.byteLength>max)fail(413,`O arquivo deve ter até ${videos.includes(mime)?20:10} MB.`);
+    const mediaId=id(),object=`${e.studio_id}/${e.id}/${mediaId}`;let original='';try{original=decodeURIComponent(request.headers.get('x-file-name')||'');}catch{original=request.headers.get('x-file-name')||'';}original=text(original,240,false);
+    await env.MEDIA.put(object,bytes,{httpMetadata:{contentType:mime}});
+    try{await run(env,'INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)',mediaId,e.id,e.studio_id,object,mime,bytes.byteLength,now(),kind,original);}catch(error){await env.MEDIA.delete(object);throw error;}
+    await audit(env,e.studio_id,null,'media_uploaded',{event_id:e.id,media_id:mediaId,media_kind:kind,source:'client'});
+    return json({media:{id:mediaId,url:`/media/${mediaId}`,mime_type:mime,media_kind:kind,original_name:original}},201);
+   }
+   if(method==='DELETE'&&key){
+    const media=await one(env,'SELECT * FROM event_media WHERE id=? AND event_id=? AND studio_id=? AND deleted_at IS NULL',key,e.id,e.studio_id);if(!media)fail(404,'Mídia não encontrada.');
+    await env.MEDIA.delete(media.object_key);await run(env,'UPDATE event_media SET deleted_at=? WHERE id=?',now(),media.id);
+    const appearance=parseObject(e.appearance),url=`/media/${media.id}`;for(const k of ['background_url','cover_url','logo_url'])if(appearance[k]===url)appearance[k]='';if(appearance.background_url==='')appearance.background_type='none';
+    await run(env,'UPDATE events SET appearance=? WHERE id=?',JSON.stringify(appearance),e.id);
+    await audit(env,e.studio_id,null,'media_deleted',{event_id:e.id,media_id:media.id,source:'client'});return json({ok:true});
+   }
   }
   if(sub==='event'&&method==='PATCH'){
    const b=await body(request),sets=[],args=[];
@@ -415,7 +437,7 @@ export async function eventsRoutes(request,env,path,url) {
     if(!allowed.includes(mime))fail(400,kind==='background_video'?'Use vídeo MP4 ou WebM.':'Use imagem JPG, PNG, WebP ou AVIF.');
     const bytes=await request.arrayBuffer(),max=video.includes(mime)?20*1024*1024:10*1024*1024;
     if(!bytes.byteLength||bytes.byteLength>max)fail(413,`O arquivo deve ter até ${video.includes(mime)?20:10} MB.`);
-    const mediaId=id(),object=`${u.studio_id}/${e.id}/${mediaId}`,original=text(decodeURIComponent(request.headers.get('x-file-name')||''),240,false);
+    const mediaId=id(),object=`${u.studio_id}/${e.id}/${mediaId}`;let original='';try{original=decodeURIComponent(request.headers.get('x-file-name')||'');}catch{original=request.headers.get('x-file-name')||'';}original=text(original,240,false);
     await env.MEDIA.put(object,bytes,{httpMetadata:{contentType:mime}});
     try{
      await run(env,'INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)',mediaId,e.id,u.studio_id,object,mime,bytes.byteLength,now(),kind,original);
@@ -427,6 +449,8 @@ export async function eventsRoutes(request,env,path,url) {
     const media=await one(env,'SELECT * FROM event_media WHERE id=? AND event_id=? AND studio_id=? AND deleted_at IS NULL',key,e.id,u.studio_id);if(!media)fail(404,'Mídia não encontrada.');
     await env.MEDIA.delete(media.object_key);
     await run(env,'UPDATE event_media SET deleted_at=? WHERE id=?',now(),media.id);
+    const appearance=parseObject(e.appearance),url=`/media/${media.id}`;for(const k of ['background_url','cover_url','logo_url'])if(appearance[k]===url)appearance[k]='';if(!appearance.background_url)appearance.background_type='none';
+    await run(env,'UPDATE events SET appearance=? WHERE id=? AND studio_id=?',JSON.stringify(appearance),e.id,u.studio_id);
     await audit(env,u.studio_id,u.id,'media_deleted',{event_id:e.id,media_id:media.id,media_kind:media.media_kind});
     return json({ok:true});
    }
