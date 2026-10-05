@@ -329,13 +329,13 @@ export async function eventsRoutes(request,env,path,url) {
    const nextStatus=choice(b.status??e.status,['active','inactive','archived']);
    await run(env,`UPDATE events SET
     title=?,event_date=?,location=?,deadline=?,status=?,rsvp_mode=?,list_behavior=?,max_people=?,checkin_mode=?,
-    appearance=?,extra_fields=?,public_texts=?,welcome_message=?,archived_at=?
+    appearance=?,extra_fields=?,public_texts=?,client_permissions=?,welcome_message=?,archived_at=?
     WHERE id=? AND studio_id=?`,
     text(b.title??e.title),date(b.event_date??e.event_date),text(b.location??e.location,300,false),date(b.deadline===undefined?e.deadline:b.deadline),
     nextStatus,choice(b.rsvp_mode??e.rsvp_mode,['free','list']),choice(b.list_behavior??e.list_behavior,['strict','flexible']),
     integer(b.max_people??e.max_people,1,100),choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
     b.appearance?safeObject(b.appearance):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
-    b.public_texts?safeObject(b.public_texts):e.public_texts,text(b.welcome_message??e.welcome_message,2000,false),
+    b.public_texts?safeObject(b.public_texts):e.public_texts,b.client_permissions?safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS)):e.client_permissions,text(b.welcome_message??e.welcome_message,2000,false),
     nextStatus==='archived'?(e.archived_at||now()):null,e.id,u.studio_id);
    await audit(env,u.studio_id,u.id,'update_event',{event_id:e.id,status:nextStatus});
    return json({event:await tenantEvent(env,u,e.id)});
