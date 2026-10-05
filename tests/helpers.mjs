@@ -7,7 +7,12 @@ export class D1 {
  async batch(queries){this.db.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());this.db.exec('COMMIT');return results;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
 export function fixture(){
- const env={DB:new D1(),APP_ORIGIN:'https://rsvp.example',RP_ID:'rsvp.example',MP_ACCESS_TOKEN:'test-only',MP_WEBHOOK_SECRET:'test-secret',MP_COLLECTOR_ID:'123',MONTHLY_CENTS:'2990',CREDIT_1_CENTS:'990',CREDIT_5_CENTS:'3990',CREDIT_10_CENTS:'6990',GRACE_DAYS:'0',ASSETS:{fetch:async()=>new Response('static')}};
+ const mediaStore=new Map();
+ const env={DB:new D1(),APP_ORIGIN:'https://rsvp.example',RP_ID:'rsvp.example',MP_ACCESS_TOKEN:'test-only',MP_WEBHOOK_SECRET:'test-secret',MP_COLLECTOR_ID:'123',MONTHLY_CENTS:'2990',CREDIT_1_CENTS:'990',CREDIT_5_CENTS:'3990',CREDIT_10_CENTS:'6990',GRACE_DAYS:'0',ASSETS:{fetch:async()=>new Response('static')},MEDIA:{
+  async put(key,value,options={}){mediaStore.set(key,{bytes:value instanceof ArrayBuffer?value:value.buffer,httpMetadata:options.httpMetadata||{},httpEtag:'test-etag'});},
+  async get(key){const item=mediaStore.get(key);return item?{body:item.bytes,httpMetadata:item.httpMetadata,httpEtag:item.httpEtag}:null;},
+  async delete(key){mediaStore.delete(key);}
+ }};
  const calls=[],resources=new Map();let sequence=0;
  env.MP_FETCH=async(url,options)=>{
   const path=new URL(url).pathname;calls.push({path,method:options.method,data:options.body?JSON.parse(options.body):null,key:options.headers['X-Idempotency-Key']});
@@ -20,6 +25,6 @@ export function fixture(){
  async function webhook(type,resource){const ts=String(Math.floor(Date.now()/1000)),rid='request-test',key=await crypto.subtle.importKey('raw',new TextEncoder().encode(env.MP_WEBHOOK_SECRET),{name:'HMAC',hash:'SHA-256'},false,['sign']);const manifest=`id:${String(resource).toLowerCase()};request-id:${rid};ts:${ts};`;const signature=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(manifest))).toString('hex');const r=await worker.fetch(new Request(`${env.APP_ORIGIN}/api/webhooks/mercadopago?data.id=${resource}`,{method:'POST',headers:{'content-type':'application/json','x-request-id':rid,'x-signature':`ts=${ts},v1=${signature}`},body:JSON.stringify({type,data:{id:String(resource)}})}),env);return {status:r.status,body:await r.json()};}
  const sql=(query,...args)=>env.DB.db.prepare(query).get(...args);
  const exec=(query,...args)=>env.DB.db.prepare(query).run(...args);
- return {env,request,register,webhook,resources,calls,sql,exec};
+ return {env,request,register,webhook,resources,calls,sql,exec,mediaStore};
 }
 export const approved=(id,order,amount=9.9)=>({id,external_reference:order,collector_id:123,currency_id:'BRL',transaction_amount:amount,status:'approved',transaction_amount_refunded:0});
