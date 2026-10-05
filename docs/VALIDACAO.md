@@ -1,5 +1,14 @@
 # Validação da entrega
 
+## Estado após a revisão de interface de 5 de outubro de 2026
+
+A branch `main` recebeu uma revisão ampla de home, planos, cadastro, painel interno, evento, financeiro, marca, conta, RSVP público, painel do cliente, QR/check-in e administração. Também foram corrigidos o fuso de data/hora enviado pelo navegador, o nome exibido no histórico de check-in individual e a política de senha mínima para 8 caracteres.
+
+A sintaxe dos arquivos JavaScript alterados e o equilíbrio da folha de estilos foram conferidos após as mudanças. Foi acrescentado um teste automatizado para o nome do participante no check-in individual. O próximo workflow de homologação ainda deve executar `pnpm run validate`, build e smoke test real no domínio HML antes de considerar esta revisão homologada.
+
+Os resultados abaixo descrevem a validação de base realizada antes desta revisão.
+
+
 Data: 5 de outubro de 2026. Ambiente: Node 24.19, SQLite do Node, Wrangler 4.147, Edge em modo headless e autenticador WebAuthn virtual.
 
 ## Resultados aprovados
