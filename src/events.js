@@ -207,7 +207,10 @@ export async function eventsRoutes(request,env,path,url) {
    let g=b.token?await one(env,'SELECT * FROM guests WHERE token=? AND event_id=? AND deleted_at IS NULL',String(b.token),e.id):null;
    if(b.token&&!g)fail(404,'Convite inválido.');
    const requestId=b.creation_request_id?text(b.creation_request_id,120):null;
-   if(!g&&requestId)g=await one(env,'SELECT * FROM guests WHERE event_id=? AND creation_request_id=? AND deleted_at IS NULL',e.id,requestId);
+   if(!g&&requestId){
+    g=await one(env,'SELECT * FROM guests WHERE event_id=? AND creation_request_id=? AND deleted_at IS NULL',e.id,requestId);
+    if(g?.responded_at)return json({guest:await guestData(env,g)});
+   }
    if(!g){
     if(e.rsvp_mode==='list')fail(403,'Abra o link individual enviado pelo anfitrião.');
     const created=now(),guestId=id(),guestName=text(b.name);
