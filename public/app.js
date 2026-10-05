@@ -109,44 +109,37 @@ function jsonDate(value,time=''){
 }
 function normalizeEventJson(raw){
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('O JSON precisa ser um objeto de configuração.');
- const v=Number(raw.schema_version||1);
- if(![1,2].includes(v))throw Error('Versão de JSON não reconhecida.');
+ const v=Number(raw.schema_version||1);if(![1,2].includes(v))throw Error('Versão de JSON não reconhecida.');
  const payload={};
  if(raw.title!==undefined)payload.title=String(raw.title).trim();
  if(raw.location!==undefined)payload.location=String(raw.location||'').trim();
  if(raw.welcome_message!==undefined)payload.welcome_message=String(raw.welcome_message||'').trim();
- const date=jsonDate(raw.event_date,raw.event_time);
- if(date)payload.event_date=date;
- const deadline=jsonDate(raw.deadline||raw.rsvp_deadline);
- if(deadline)payload.deadline=deadline;
+ const eventDate=jsonDate(raw.event_date,raw.event_time);if(eventDate)payload.event_date=eventDate;
+ const deadline=jsonDate(raw.deadline||raw.rsvp_deadline);if(deadline)payload.deadline=deadline;
  if(['free','list'].includes(raw.rsvp_mode))payload.rsvp_mode=raw.rsvp_mode;
- const max=Number(raw.max_people??raw.max_people_per_rsvp);
- if(Number.isInteger(max)&&max>=1&&max<=100)payload.max_people=max;
+ if(['strict','flexible'].includes(raw.list_behavior))payload.list_behavior=raw.list_behavior;
+ const max=Number(raw.max_people??raw.max_people_per_rsvp);if(Number.isInteger(max)&&max>=1&&max<=100)payload.max_people=max;
  if(['off','family','individual'].includes(raw.checkin_mode))payload.checkin_mode=raw.checkin_mode;
  if(['active','inactive','archived'].includes(raw.status))payload.status=raw.status;
- const color=raw.appearance?.color||raw.primary_color||raw.appearance_settings?.primary_color||raw.appearance_settings?.primaryColor;
- if(/^#[a-f0-9]{6}$/i.test(String(color||'')))payload.appearance={color:String(color),background:''};
- const known=new Set(['schema_version','source','exported_at','title','location','welcome_message','event_date','event_time','deadline','rsvp_deadline','rsvp_mode','max_people','max_people_per_rsvp','checkin_mode','status','appearance','primary_color','appearance_settings']);
+ if(raw.extra_fields&&typeof raw.extra_fields==='object'&&!Array.isArray(raw.extra_fields))payload.extra_fields={...raw.extra_fields};
+ if(raw.public_texts&&typeof raw.public_texts==='object'&&!Array.isArray(raw.public_texts))payload.public_texts={...raw.public_texts};
+ if(raw.client_permissions&&typeof raw.client_permissions==='object'&&!Array.isArray(raw.client_permissions))payload.client_permissions={...raw.client_permissions};
+ const oldA=raw.appearance_settings&&typeof raw.appearance_settings==='object'?raw.appearance_settings:{},newA=raw.appearance&&typeof raw.appearance==='object'?raw.appearance:{};
+ const appearance={...oldA,...newA};
+ const primary=raw.primary_color||appearance.button_color||appearance.color;
+ if(/^#[a-f0-9]{6}$/i.test(String(primary||''))){appearance.button_color=String(primary);appearance.color=String(primary);}
+ if(/^#[a-f0-9]{6}$/i.test(String(raw.accent_color||''))&&!appearance.background_color)appearance.background_color=String(raw.accent_color);
+ for(const mediaKey of ['background','background_url','background_image_url','background_video_url','cover_url','logo_url'])delete appearance[mediaKey];
+ appearance.background_type='none';
+ if(Object.keys(appearance).length)payload.appearance=appearance;
+ const known=new Set(['schema_version','source','exported_at','title','location','welcome_message','event_date','event_time','deadline','rsvp_deadline','rsvp_mode','list_behavior','max_people','max_people_per_rsvp','checkin_mode','status','appearance','primary_color','accent_color','appearance_settings','extra_fields','public_texts','client_permissions','background_type','background_image_url','background_video_url']);
  const ignored=Object.keys(raw).filter(k=>!known.has(k));
  return {payload,ignored,version:v};
 }
 function exportEventJson(e){
- const appearance=JSON.parse(e.appearance||'{}');
- return {
-  schema_version:2,
-  source:'presenca-confirmada',
-  exported_at:new Date().toISOString(),
-  title:e.title,
-  event_date:e.event_date||null,
-  location:e.location||'',
-  deadline:e.deadline||null,
-  rsvp_mode:e.rsvp_mode||'free',
-  max_people:Number(e.max_people||10),
-  checkin_mode:e.checkin_mode||'off',
-  status:e.status||'active',
-  appearance:{color:/^#[a-f0-9]{6}$/i.test(appearance.color||'')?appearance.color:'#a66f73'},
-  welcome_message:e.welcome_message||''
- };
+ const appearance=parseObj(e.appearance),extra_fields={...DEFAULT_EXTRA_FIELDS,...parseObj(e.extra_fields)},public_texts=parseObj(e.public_texts),client_permissions={...DEFAULT_CLIENT_PERMISSIONS,...parseObj(e.client_permissions)};
+ const cleanAppearance={...appearance};for(const k of ['background_url','cover_url','logo_url'])delete cleanAppearance[k];cleanAppearance.background_type='none';
+ return {schema_version:2,source:'presenca-confirmada',exported_at:new Date().toISOString(),title:e.title,event_date:e.event_date||null,location:e.location||'',deadline:e.deadline||null,rsvp_mode:e.rsvp_mode||'free',list_behavior:e.list_behavior||'strict',max_people:Number(e.max_people||10),checkin_mode:e.checkin_mode||'off',status:e.status||'active',appearance:cleanAppearance,extra_fields,public_texts,client_permissions,welcome_message:e.welcome_message||''};
 }
 function downloadJson(filename,data){
  const a=document.createElement('a');
@@ -156,18 +149,8 @@ function downloadJson(filename,data){
  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 function jsonSummary(payload,ignored=[]){
- const rows=[
-  ['Evento',payload.title],
-  ['Data',payload.event_date?formatDate(payload.event_date,true):''],
-  ['Local',payload.location],
-  ['Prazo',payload.deadline?formatDate(payload.deadline,true):''],
-  ['Confirmação',payload.rsvp_mode==='list'?'Lista individual':payload.rsvp_mode==='free'?'Link livre':''],
-  ['Limite por convite',payload.max_people],
-  ['Check-in',payload.checkin_mode?({off:'Desativado',family:'Por família',individual:'Por pessoa'}[payload.checkin_mode]):''],
-  ['Cor',payload.appearance?.color],
-  ['Mensagem',payload.welcome_message]
- ].filter(([,v])=>v!==undefined&&v!==null&&v!=='');
- return `<div class="json-summary">${rows.map(([k,v])=>`<div><span>${escape(k)}</span><strong>${escape(v)}</strong></div>`).join('')}</div>${ignored.length?`<p class="json-ignored">Campos do sistema antigo que não são usados aqui: ${escape(ignored.join(', '))}.</p>`:''}`;
+ const rows=[['Evento',payload.title],['Data',payload.event_date?formatDate(payload.event_date,true):''],['Local',payload.location],['Prazo',payload.deadline?formatDate(payload.deadline,true):''],['Confirmação',payload.rsvp_mode==='list'?'Lista por família':payload.rsvp_mode==='free'?'Link livre':''],['Lista',payload.list_behavior==='flexible'?'Flexível':payload.list_behavior==='strict'?'Fechada':''],['Limite por convite',payload.max_people],['Check-in',payload.checkin_mode?({off:'Desativado',family:'Por família',individual:'Por pessoa'}[payload.checkin_mode]):''],['Idioma',payload.appearance?.interface_language],['Cor',payload.appearance?.button_color||payload.appearance?.color],['Campos opcionais',payload.extra_fields?Object.keys(payload.extra_fields).filter(k=>payload.extra_fields[k]).join(', '):''],['Textos',payload.public_texts?Object.keys(payload.public_texts).length+' personalizado(s)':''],['Mensagem',payload.welcome_message]].filter(([,v])=>v!==undefined&&v!==null&&v!=='');
+ return `<div class="json-summary">${rows.map(([k,v])=>`<div><span>${escape(k)}</span><strong>${escape(v)}</strong></div>`).join('')}</div>${ignored.length?`<p class="json-ignored">Campos antigos sem equivalente comercial: ${escape(ignored.join(', '))}.</p>`:''}<p class="json-note">Mídias antigas não são importadas por URL. Envie-as novamente na biblioteca do evento.</p>`;
 }
 function closeJsonModal(){document.querySelector('#json-modal')?.remove();document.body.classList.remove('modal-open');}
 function openJsonImport(eventId=null,currentEvent=null,done=null){
