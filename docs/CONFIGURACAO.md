@@ -8,7 +8,7 @@
 - Endereço inicial configurado: `https://rsvp-plataforma.jbrito-artesdigital.workers.dev`.
 - Worker ainda não publicado: será criado no primeiro deploy manual pelo GitHub Actions, após as migrations. O D1 está vazio; o R2 está vazio.
 
-Não recrie esses recursos. A seção seguinte é referência para outro ambiente. Ainda faltam credenciais de publicação no GitHub, preços dos créditos e dados do Mercado Pago. O guard de deploy continua bloqueando publicação com configuração financeira incompleta.
+Não recrie esses recursos. A seção seguinte é referência para outro ambiente. Ainda faltam credenciais de publicação no GitHub e dados do Mercado Pago. O guard de deploy continua bloqueando publicação com configuração financeira incompleta.
 
 ## Recursos novos
 
@@ -21,7 +21,7 @@ pnpm exec wrangler r2 bucket create rsvp-plataforma-media
 
 Em outro ambiente, copie somente o ID do D1 novo para `wrangler.jsonc`. Mantenha os nomes comerciais. O ambiente atual já usa o endereço inicial `workers.dev`; se escolher domínio próprio, configure `vars.APP_ORIGIN` com a origem HTTPS sem barra final e `RP_ID` só com o hostname. Para mudar de domínio depois de cadastrar passkeys, planeje novo cadastro das credenciais no novo RP ID.
 
-Defina os preços inteiros em centavos em `CREDIT_1_CENTS`, `CREDIT_5_CENTS` e `CREDIT_10_CENTS`. `MONTHLY_CENTS=2990`. Configure `MP_COLLECTOR_ID` com o ID da conta Mercado Pago que recebe os pagamentos. `GRACE_DAYS` vai de 0 a 7.
+Preços confirmados: `CREDIT_1_CENTS=1490` (1 evento), `CREDIT_5_CENTS=6490` (5 eventos), `CREDIT_10_CENTS=10990` (10 eventos) e `MONTHLY_CENTS=2990` (mensal ilimitado). Configure `MP_COLLECTOR_ID` com o ID da conta Mercado Pago que recebe os pagamentos. `GRACE_DAYS` vai de 0 a 7.
 
 ## Secrets
 
@@ -59,4 +59,4 @@ Confirme na homologação os cabeçalhos de assinatura e o timestamp entregues p
 
 ### Pendências para abertura ao público
 
-Preços de créditos; identificação e suporte da operadora; termos e privacidade definitivos; política de retenção/exclusão; homologação com Mercado Pago e aparelhos reais; backup e monitoração dos recursos comerciais. O checkout não oferece estorno iniciado no próprio painel nesta versão: o estorno realizado no Mercado Pago é recebido e compensado no ledger.
+Identificação e suporte da operadora; termos e privacidade definitivos; política de retenção/exclusão; homologação com Mercado Pago e aparelhos reais; backup e monitoração dos recursos comerciais. O checkout não oferece estorno iniciado no próprio painel nesta versão: o estorno realizado no Mercado Pago é recebido e compensado no ledger.
