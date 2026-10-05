@@ -76,7 +76,7 @@ async function guestData(env,g,privateView=false) {
   id:g.id,name:g.name,group_label:g.group_label||'',response_status:g.response_status,max_people:g.max_people,
   max_adults_allowed:g.max_adults_allowed,max_children_allowed:g.max_children_allowed,
   message:g.message,dietary:g.dietary,notes:g.notes||'',token:g.token,qr_token:g.qr_token,
-  source:g.source||'admin',responded_at:g.responded_at||null,deleted_at:g.deleted_at||null,members
+  source:g.source||'admin',created_at:g.created_at||null,responded_at:g.responded_at||null,deleted_at:g.deleted_at||null,members
  };
  if(privateView)data.phone=g.phone;
  return data;
