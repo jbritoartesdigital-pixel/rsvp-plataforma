@@ -249,6 +249,8 @@ const PUBLIC_TEXTS={
   decline_message:'Obrigada por avisar.',
   message_label:'Deixe uma mensagem',
   message_placeholder:'Uma mensagem especial para quem está celebrando...',
+  name_label:'Qual é o seu nome?',
+  decline_hint:'Tudo bem 💛 Se quiser, você ainda pode deixar uma mensagem.',
   calendar_button:'Adicionar à agenda',
   back_button:'Voltar ao convite',
   closed_title:'Confirmações encerradas'
@@ -264,6 +266,8 @@ const PUBLIC_TEXTS={
   decline_message:'Thank you for letting us know.',
   message_label:'Leave a message',
   message_placeholder:'A special message for the celebration...',
+  name_label:'What is your name?',
+  decline_hint:"That's okay 💛 You can still leave a message if you want.",
   calendar_button:'Add to calendar',
   back_button:'Back to invitation',
   closed_title:'RSVP closed'
@@ -273,7 +277,7 @@ const DEFAULT_APPEARANCE={
  color:'#a66f73',background_color:'#fcf8f7',card_color:'#ffffff',text_color:'#2f292b',
  muted_color:'#786f71',button_color:'#a66f73',button_text_color:'#ffffff',
  overlay_color:'#ffffff',overlay_opacity:.78,card_opacity:.96,card_blur:10,card_radius:22,
- font_style:'modern',card_style:'soft',background_position:'center',card_width:'medium',
+ font_style:'modern',card_style:'soft',background_position:'center',background_x:'center',card_width:'medium',
  interface_language:'pt-BR',invitation_url:'',calendar_location:'',calendar_end_time:'',
  background_type:'none',background_url:'',cover_url:'',logo_url:''
 };
@@ -346,10 +350,12 @@ function appearanceFields(a){
   ${field('card_color','Cor do cartão','color',a.card_color,false)}
   ${field('text_color','Cor do texto','color',a.text_color,false)}
   ${field('muted_color','Texto secundário','color',a.muted_color,false)}
+  ${field('overlay_color','Cor da sobreposição','color',a.overlay_color,false)}
   ${select('card_style','Estilo do cartão',[['soft','Suave'],['glass','Vidro'],['solid','Sólido']],a.card_style)}
   ${select('card_width','Largura do cartão',[['narrow','Estreito'],['medium','Médio'],['wide','Largo']],a.card_width)}
   ${select('font_style','Tipografia',[['modern','Moderna'],['elegant','Elegante'],['friendly','Amigável']],a.font_style)}
-  ${select('background_position','Posição da mídia',[['center','Centro'],['top','Topo'],['bottom','Base']],a.background_position)}
+  ${select('background_position','Posição vertical',[['center','Centro'],['top','Topo'],['bottom','Base']],a.background_position)}
+  ${select('background_x','Posição horizontal',[['left','Esquerda'],['center','Centro'],['right','Direita']],a.background_x)}
   ${number('overlay_opacity','Opacidade do fundo',a.overlay_opacity,0,1,.05)}
   ${number('card_opacity','Opacidade do cartão',a.card_opacity,0.55,1,.05)}
   ${number('card_blur','Desfoque do cartão',a.card_blur,0,30,1)}
@@ -366,7 +372,7 @@ function appearanceFields(a){
 }
 function collectAppearance(formEl,current){
  const fd=new FormData(formEl),a={...current};
- for(const key of ['button_color','button_text_color','background_color','card_color','text_color','muted_color','card_style','card_width','font_style','background_position','interface_language','invitation_url','calendar_location','calendar_end_time','background_type','background_url','cover_url','logo_url'])if(fd.has(key))a[key]=fd.get(key);
+ for(const key of ['button_color','button_text_color','background_color','card_color','text_color','muted_color','overlay_color','card_style','card_width','font_style','background_position','background_x','interface_language','invitation_url','calendar_location','calendar_end_time','background_type','background_url','cover_url','logo_url'])if(fd.has(key))a[key]=fd.get(key);
  for(const key of ['overlay_opacity','card_opacity','card_blur','card_radius'])if(fd.has(key))a[key]=Number(fd.get(key));
  a.color=a.button_color;return a;
 }
@@ -460,7 +466,7 @@ function publicSuccess(e,guest){
 }
 function freeRsvp(e,endpoint,guest=null){
  const t=eventTexts(e),requestId=crypto.randomUUID(),existing=guest?.members||[];
- const fields=field('name',ptr(e,'Qual é o seu nome?','What is your name?'),'text',guest?.name||'')+select('response_status',ptr(e,'Você poderá comparecer?','Will you attend?'),[['yes',t.yes_button],['no',t.no_button],['pending',ptr(e,'Ainda não sei','Not sure yet')]],guest?.response_status||'yes')+`<label id="members-label"><span class="field-label">${ptr(e,'Quem vai com você?','Who is attending?')}</span><textarea name="members" placeholder="${ptr(e,'Uma pessoa por linha. Use “; criança” para criança.','One person per line. Use “; child” for a child.')}">${escape(existing.length?existing.filter(m=>m.attendance_status!=='no').map(m=>`${m.name}${m.person_type==='child'?'; criança':''}`).join('\n'):guest?.name||'')}</textarea><small class="field-hint">${ptr(e,`Limite de ${e.max_people} pessoa(s).`,`Limit: ${e.max_people} people.`)}</small></label>`+publicOptionalFields(e,guest||{});
+ const fields=field('name',t.name_label||ptr(e,'Qual é o seu nome?','What is your name?'),'text',guest?.name||'')+select('response_status',ptr(e,'Você poderá comparecer?','Will you attend?'),[['yes',t.yes_button],['no',t.no_button],['pending',ptr(e,'Ainda não sei','Not sure yet')]],guest?.response_status||'yes')+`<label id="members-label"><span class="field-label">${ptr(e,'Quem vai com você?','Who is attending?')}</span><textarea name="members" placeholder="${ptr(e,'Uma pessoa por linha. Use “; criança” para criança.','One person per line. Use “; child” for a child.')}">${escape(existing.length?existing.filter(m=>m.attendance_status!=='no').map(m=>`${m.name}${m.person_type==='child'?'; criança':''}`).join('\n'):guest?.name||'')}</textarea><small class="field-hint">${ptr(e,`Limite de ${e.max_people} pessoa(s).`,`Limit: ${e.max_people} people.`)}</small></label>`+publicOptionalFields(e,guest||{});
  app.innerHTML=publicFrame(e,`<p class="rsvp-welcome">${escape(e.welcome_message||t.intro)}</p>${form('public-rsvp',fields,ptr(e,'Enviar resposta','Submit RSVP'))}`);applyAppearance(e.appearance,e.brand);
  const formEl=document.querySelector('#public-rsvp');mountTurnstile(formEl,e.turnstile_sitekey);const name=formEl.querySelector('[name=name]'),members=formEl.querySelector('[name=members]');let auto=!members.value.trim()||members.value.trim()===name.value.trim();name.oninput=()=>{if(auto)members.value=name.value;};members.oninput=()=>{auto=!members.value.trim()||members.value.trim()===name.value.trim();};
  submit('public-rsvp',async b=>{const status=b.response_status;let list=parseMemberLines(b.members).map(m=>({...m,attendance_status:status==='yes'?'yes':status}));if(!list.length)list=[{name:b.name,person_type:'adult',attendance_status:status}];b.members=list;b.creation_request_id=requestId;if(guest?.token)b.token=guest.token;try{const result=await api(endpoint,'POST',b);publicSuccess(e,result.guest);}catch(err){resetTurnstile(formEl);throw Error(publicError(err.message,e));}});
@@ -482,10 +488,10 @@ async function publicPage(studio,event){
 }
 function applyAppearance(raw={},brand={}){
  const a={...DEFAULT_APPEARANCE,...raw},brandColor=/^#[a-f0-9]{6}$/i.test(brand?.color||'')?brand.color:'#a66f73';if(!/^#[a-f0-9]{6}$/i.test(a.button_color||''))a.button_color=brandColor;
- const root=document.documentElement,vars={accent:a.button_color,eventBg:a.background_color,eventCard:a.card_color,eventText:a.text_color,eventMuted:a.muted_color,eventButtonText:a.button_text_color,eventRadius:`${Number(a.card_radius)||22}px`,eventBlur:`${Number(a.card_blur)||0}px`,eventCardOpacity:String(Number(a.card_opacity)||.96),eventOverlayOpacity:String(Number(a.overlay_opacity)||0)};
+ const root=document.documentElement,vars={accent:a.button_color,eventBg:a.background_color,eventCard:a.card_color,eventText:a.text_color,eventMuted:a.muted_color,eventButtonText:a.button_text_color,eventRadius:`${Number(a.card_radius)||22}px`,eventBlur:`${Number(a.card_blur)||0}px`,eventCardOpacity:String(Number(a.card_opacity)||.96),eventOverlayOpacity:String(Number(a.overlay_opacity)||0),eventOverlay:a.overlay_color||'#ffffff'};
  for(const [k,v] of Object.entries(vars))root.style.setProperty(`--${k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase())}`,v);
  const shell=document.querySelector('.rsvp-shell');if(!shell)return;shell.classList.toggle('event-card-glass',a.card_style==='glass');shell.classList.toggle('event-card-solid',a.card_style==='solid');shell.querySelector('.event-media-layer')?.remove();
- if(a.background_url&&/^\/media\/[a-f0-9-]+$/.test(a.background_url)){const layer=document.createElement('div');layer.className='event-media-layer';if(a.background_type==='video'){const v=document.createElement('video');v.src=a.background_url;v.autoplay=true;v.muted=true;v.loop=true;v.playsInline=true;layer.append(v);}else{const img=document.createElement('img');img.src=a.background_url;img.alt='';layer.append(img);}layer.dataset.position=a.background_position||'center';shell.prepend(layer);}
+ if(a.background_url&&/^\/media\/[a-f0-9-]+$/.test(a.background_url)){const layer=document.createElement('div');layer.className='event-media-layer';if(a.background_type==='video'){const v=document.createElement('video');v.src=a.background_url;v.autoplay=true;v.muted=true;v.loop=true;v.playsInline=true;layer.append(v);}else{const img=document.createElement('img');img.src=a.background_url;img.alt='';layer.append(img);}layer.dataset.position=a.background_position||'center';layer.dataset.x=a.background_x||'center';shell.prepend(layer);}
 }
 async function qrPage(raw){
  const q=await api(`/api/q/${encodeURIComponent(raw)}`);document.title=`QR de entrada · ${q.event_title}`;app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card qr-card"><span class="eyebrow">Entrada no evento</span><h1>${escape(q.event_title)}</h1><p class="qr-name">${escape(q.name)}</p><div class="qr-frame"><img class="qr" id="qr" alt="QR de entrada"></div><span class="status-chip ${q.checked_in?'success':'neutral'}">${q.checked_in?'Entrada já registrada':'Pronto para apresentar'}</span><p class="muted">${q.checked_in?'Este QR já foi utilizado no check-in.':'Apresente este QR na entrada do evento.'}</p></div></div>`;document.querySelector('#qr').src=await QRCode.toDataURL(location.href,{margin:2,width:460});
