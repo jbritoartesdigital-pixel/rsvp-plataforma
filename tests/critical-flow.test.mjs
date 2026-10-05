@@ -96,7 +96,7 @@ test('eventos simultâneos consomem exatamente um crédito; rollback mantém sch
  assert.equal(results.filter(r=>r.status===201).length,1);assert.equal(results.filter(r=>r.status===402).length,2);
  assert.equal(f.sql('SELECT credits FROM studios WHERE id=?',a.user.studio_id).credits,0);assert.equal(f.sql('SELECT COUNT(*) n FROM events').n,1);
  assert.equal(f.env.DB.db.prepare('PRAGMA foreign_key_check').all().length,0);
- assert.throws(()=>f.exec("INSERT INTO guest_members VALUES('x','invalid','invalid','X','adult','yes',NULL)"),/FOREIGN KEY/);
+ assert.throws(()=>f.exec("INSERT INTO guest_members(id,guest_id,event_id,name,person_type,attendance_status,qr_token,is_preapproved) VALUES('x','invalid','invalid','X','adult','yes',NULL,1)"),/FOREIGN KEY/);
 });
 test('CSRF, assinatura adulterada, sessão e passkey falsas são rejeitadas',async()=>{
  const f=fixture(),a=await f.register();assert.equal((await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie,'https://evil.example')).status,403);
