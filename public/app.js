@@ -424,6 +424,16 @@ async function showHistory(base){
  const {audit}=await api(`${base}/audit`),labels={create_event:'Evento criado',update_event:'Evento atualizado',duplicate_event:'Evento duplicado',guest_created:'Convidado cadastrado',guest_updated:'Convidado editado',guest_deleted:'Convidado enviado à lixeira',guest_restored:'Convidado restaurado',guest_bulk_deleted:'Convidados enviados à lixeira',guest_bulk_restored:'Convidados restaurados',rsvp_submitted:'Confirmação enviada',media_uploaded:'Mídia enviada',media_deleted:'Mídia removida',checkin:'Check-in',client_link_reset:'Link do cliente renovado',client_event_updated:'Cliente editou o evento'};
  openModal('Histórico do evento',audit.length?`<div class="history-list">${audit.map(x=>`<div class="history-item"><div><strong>${escape(labels[x.action]||x.action)}</strong><span>${escape(x.actor_name||'Sistema / convidado')}</span></div><time>${escape(formatDate(x.created_at,true))}</time></div>`).join('')}</div>`:'<div class="empty-state compact"><p>Nenhuma alteração registrada ainda.</p></div>');
 }
+function uploadBinary(url,file,headers={},onProgress=()=>{}){
+ return new Promise((resolve,reject)=>{
+  const xhr=new XMLHttpRequest();xhr.open('POST',url);
+  for(const [key,value] of Object.entries(headers))xhr.setRequestHeader(key,value);
+  xhr.upload.onprogress=ev=>{if(ev.lengthComputable)onProgress(Math.round(ev.loaded/ev.total*100));};
+  xhr.onerror=()=>reject(Error('Não foi possível enviar o arquivo.'));
+  xhr.onload=()=>{let data={};try{data=JSON.parse(xhr.responseText||'{}');}catch{}if(xhr.status>=200&&xhr.status<300)resolve(data);else reject(Error(data.error||'Não foi possível enviar o arquivo.'));};
+  xhr.send(file);
+ });
+}
 function openBulkAdd(e,endpoint,done){
  const modal=openModal('Adicionar vários convidados',form('bulk-add','<label><span class="field-label">Um nome por linha<b class="required-mark">*</b></span><textarea name="names" rows="12" required placeholder="Maria Silva\\nJoão Souza\\nFamília Costa"></textarea><small class="field-hint">Cada nome entra como uma família de 1 adulto pendente. Você pode editar e agrupar depois.</small></label>','Cadastrar lista'));
  submit('bulk-add',async b=>{
@@ -481,9 +491,9 @@ async function eventPage(eventId){
  click('export',()=>downloadCSV(guests));click('export-pdf',()=>exportEventPdf(e,guests,user.studio.name));
  const selected=new Set(),bulk=document.querySelector('#bulk-bar'),count=document.querySelector('#bulk-count');const syncSelection=()=>{count.textContent=`${selected.size} selecionado${selected.size===1?'':'s'}`;bulk.hidden=!selected.size;};document.querySelectorAll('[data-select-guest]').forEach(cb=>cb.onchange=()=>{cb.checked?selected.add(cb.dataset.selectGuest):selected.delete(cb.dataset.selectGuest);syncSelection();});click('select-visible',()=>{document.querySelectorAll('[data-guest]:not([hidden]) [data-select-guest]').forEach(x=>{x.checked=true;selected.add(x.dataset.selectGuest);});syncSelection();});click('bulk-clear',()=>{selected.clear();document.querySelectorAll('[data-select-guest]').forEach(x=>x.checked=false);syncSelection();});click('bulk-delete',async()=>{if(!confirm(`Enviar ${selected.size} convidado(s) para a lixeira?`))return;await api(`${base}/guests/bulk`,'POST',{action:'delete',ids:[...selected]});await eventPage(eventId);});
  let activeFilter='';const filter=()=>{const q=normalizedName(document.querySelector('#search').value);document.querySelectorAll('[data-guest]').forEach(row=>{const matchesSearch=!q||row.dataset.name.includes(q),matchesFilter=!activeFilter||(activeFilter==='duplicates'?row.dataset.duplicate==='1':row.dataset.status===activeFilter);row.hidden=!(matchesSearch&&matchesFilter);});};document.querySelector('#search').oninput=filter;document.querySelectorAll('[data-filter]').forEach(btn=>btn.onclick=()=>{document.querySelectorAll('[data-filter]').forEach(x=>x.classList.remove('active'));btn.classList.add('active');activeFilter=btn.dataset.filter;filter();});
- document.querySelector('#upload').onchange=async ev=>{const file=ev.target.files[0];if(!file)return;const kind=document.querySelector('#media-kind').value,result=document.querySelector('#media-result');result.textContent='Enviando…';try{const r=await fetch(`${base}/media?kind=${encodeURIComponent(kind)}`,{method:'POST',headers:{'content-type':file.type,'x-file-name':encodeURIComponent(file.name)},body:file});const data=await r.json();if(!r.ok)throw Error(data.error);const next={...a},url=data.media.url;if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;await api(base,'PATCH',{appearance:next});result.textContent='Mídia enviada e aplicada.';await eventPage(eventId);}catch(err){result.textContent='';notice(err.message);}};
- document.querySelectorAll('[data-use-media]').forEach(btn=>btn.onclick=async()=>{const next={...a},url=mediaUrl(btn.dataset.useMedia),kind=btn.dataset.kind;if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;await api(base,'PATCH',{appearance:next});notice('Mídia aplicada.');await eventPage(eventId);});
- document.querySelectorAll('[data-delete-media]').forEach(btn=>btn.onclick=async()=>{if(!confirm('Remover esta mídia?'))return;await api(`${base}/media/${btn.dataset.deleteMedia}`,'DELETE');await eventPage(eventId);});
+ document.querySelector('#upload').onchange=async ev=>{const file=ev.target.files[0];if(!file)return;const kind=document.querySelector('#media-kind').value,result=document.querySelector('#media-result');if(document.querySelector('#appearance-save-state')?.classList.contains('dirty')){ev.target.value='';notice('Salve as alterações visuais antes de enviar uma nova mídia.');return;}result.textContent='Enviando 0%';try{const data=await uploadBinary(`${base}/media?kind=${encodeURIComponent(kind)}`,file,{'content-type':file.type,'x-file-name':encodeURIComponent(file.name)},n=>{result.textContent=n>=100?'Processando…':`Enviando ${n}%`;});const next={...a},url=data.media.url;if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;await api(base,'PATCH',{appearance:next});result.textContent='Mídia enviada e aplicada.';await eventPage(eventId);}catch(err){result.textContent='';notice(err.message);}};
+ document.querySelectorAll('[data-use-media]').forEach(btn=>btn.onclick=async()=>{if(document.querySelector('#appearance-save-state')?.classList.contains('dirty')){notice('Salve as alterações visuais antes de trocar a mídia.');return;}const next={...a},url=mediaUrl(btn.dataset.useMedia),kind=btn.dataset.kind;if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;await api(base,'PATCH',{appearance:next});notice('Mídia aplicada.');await eventPage(eventId);});
+ document.querySelectorAll('[data-delete-media]').forEach(btn=>btn.onclick=async()=>{if(document.querySelector('#appearance-save-state')?.classList.contains('dirty')){notice('Salve as alterações visuais antes de remover uma mídia.');return;}if(!confirm('Remover esta mídia?'))return;await api(`${base}/media/${btn.dataset.deleteMedia}`,'DELETE');await eventPage(eventId);});
 }
 function parseCSV(input){const rows=[[]];let current='',quoted=false;for(let i=0;i<input.length;i++){const c=input[i];if(c==='"'){if(quoted&&input[i+1]==='"'){current+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){rows.at(-1).push(current);current='';}else if(c==='\n'&&!quoted){rows.at(-1).push(current.replace(/\r$/,''));current='';rows.push([]);}else current+=c;}if(quoted)throw Error('CSV com aspas não fechadas.');rows.at(-1).push(current.replace(/\r$/,''));return rows;}
 function downloadCSV(guests){
@@ -576,8 +586,8 @@ async function clientPage(raw){
   const file=ev.target.files[0];if(!file)return;
   const kind=document.querySelector('#client-media-kind').value,result=document.querySelector('#client-media-result');result.textContent='Enviando…';
   try{
-   const r=await fetch(`${endpoint}/media?kind=${encodeURIComponent(kind)}`,{method:'POST',headers:{'content-type':file.type,'x-file-name':encodeURIComponent(file.name)},body:file});
-   const data=await r.json();if(!r.ok)throw Error(data.error);
+   if(document.querySelector('#client-appearance-save-state')?.classList.contains('dirty')){ev.target.value='';notice('Salve as alterações visuais antes de enviar uma nova mídia.');return;}
+   const data=await uploadBinary(`${endpoint}/media?kind=${encodeURIComponent(kind)}`,file,{'content-type':file.type,'x-file-name':encodeURIComponent(file.name)},n=>{result.textContent=n>=100?'Processando…':`Enviando ${n}%`;});
    const next={...a},url=data.media.url;
    if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}
    else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;
@@ -585,12 +595,14 @@ async function clientPage(raw){
   }catch(err){result.textContent='';notice(err.message);}
  };
  document.querySelectorAll('[data-client-use-media]').forEach(btn=>btn.onclick=async()=>{
+  if(document.querySelector('#client-appearance-save-state')?.classList.contains('dirty')){notice('Salve as alterações visuais antes de trocar a mídia.');return;}
   const next={...a},url=mediaUrl(btn.dataset.clientUseMedia),kind=btn.dataset.kind;
   if(kind==='background_image'||kind==='background_video'){next.background_type=kind==='background_video'?'video':'image';next.background_url=url;}
   else if(kind==='cover')next.cover_url=url;else if(kind==='logo')next.logo_url=url;
   await api(`${endpoint}/event`,'PATCH',{appearance:next});await clientPage(raw);
  });
  document.querySelectorAll('[data-client-delete-media]').forEach(btn=>btn.onclick=async()=>{
+  if(document.querySelector('#client-appearance-save-state')?.classList.contains('dirty')){notice('Salve as alterações visuais antes de remover uma mídia.');return;}
   if(!confirm('Remover esta mídia?'))return;await api(`${endpoint}/media/${btn.dataset.clientDeleteMedia}`,'DELETE');await clientPage(raw);
  });
 }
