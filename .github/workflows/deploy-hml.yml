@@ -32,6 +32,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Limpar tentativas antigas de checkout da HML
+        run: |
+          pnpm exec wrangler d1 execute DB --remote --env hml --command="UPDATE billing_orders SET status='failed' WHERE status='pending' AND checkout_url IS NOT NULL;"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Garantir primeiro Super Admin da HML
         run: |
           pnpm exec wrangler d1 execute DB --remote --env hml --command="UPDATE users SET role='super_admin' WHERE id=(SELECT id FROM users WHERE role='studio_owner' ORDER BY created_at ASC LIMIT 1) AND NOT EXISTS(SELECT 1 FROM users WHERE role='super_admin');"
