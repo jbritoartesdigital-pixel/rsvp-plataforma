@@ -24,7 +24,7 @@ export function integer(value,min,max) { const n=Number(value); if(!Number.isInt
 export function choice(value,values) { if(!values.includes(value)) fail(400,'Opção inválida.'); return value; }
 export function slug(value) { const v=text(value,64); if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v)||['api','app','admin','q','cliente','planos','termos','privacidade','media'].includes(v)) fail(400,'Use um endereço com letras minúsculas, números e hífens.'); return v; }
 export function date(value) { if(!value) return null; const d=new Date(value); if(!Number.isFinite(d.getTime())) fail(400,'Data inválida.'); return d.toISOString(); }
-export async function audit(env,studio,actor,action,details={}) { return run(env,'INSERT INTO audit_logs VALUES(?,?,?,?,?,?)',id(),studio??null,actor??null,action,JSON.stringify(details),now()); }
+export async function audit(env,studio,actor,action,details={}) { return run(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,?,?)',id(),studio??null,actor??null,action,JSON.stringify(details),now(),details.event_id??null,details.guest_id??null); }
 export async function limit(env,key,max=20) {
  const bucket=Math.floor(Date.now()/60000); const k=await hash(`${key}:${bucket}`);
  const row=await stmt(env,`INSERT INTO rate_limits VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 RETURNING hits`,k,bucket+2).first();
