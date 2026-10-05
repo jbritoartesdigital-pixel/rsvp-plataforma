@@ -7,10 +7,10 @@ export async function adminRoutes(request,env,path) {
   (SELECT COUNT(*) FROM events e WHERE e.studio_id=s.id) event_count,
   (SELECT u.name FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner' ORDER BY u.created_at ASC LIMIT 1) owner_name,
   (SELECT u.email FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner' ORDER BY u.created_at ASC LIMIT 1) owner_email
-  FROM studios s ORDER BY s.created_at DESC LIMIT 1000`)});
- if(path==='/api/admin/events' && method==='GET') return json({events:await all(env,'SELECT e.*,s.name studio_name,s.slug studio_slug FROM events e JOIN studios s ON s.id=e.studio_id ORDER BY e.created_at DESC LIMIT 1000')});
- if(path==='/api/admin/financeiro' && method==='GET') return json({orders:await all(env,'SELECT o.*,s.name studio_name FROM billing_orders o JOIN studios s ON s.id=o.studio_id ORDER BY created_at DESC LIMIT 1000'),payments:await all(env,'SELECT * FROM payments ORDER BY updated_at DESC LIMIT 1000')});
- if(path==='/api/admin/audit' && method==='GET') return json({audit:await all(env,'SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1000')});
+  FROM studios s WHERE EXISTS(SELECT 1 FROM users x WHERE x.studio_id=s.id AND x.role='studio_owner') ORDER BY s.created_at DESC LIMIT 1000`)});
+ if(path==='/api/admin/events' && method==='GET') return json({events:await all(env,"SELECT e.*,s.name studio_name,s.slug studio_slug FROM events e JOIN studios s ON s.id=e.studio_id WHERE EXISTS(SELECT 1 FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner') ORDER BY e.created_at DESC LIMIT 1000")});
+ if(path==='/api/admin/financeiro' && method==='GET') return json({orders:await all(env,"SELECT o.*,s.name studio_name FROM billing_orders o JOIN studios s ON s.id=o.studio_id WHERE EXISTS(SELECT 1 FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner') ORDER BY o.created_at DESC LIMIT 1000"),payments:await all(env,"SELECT p.* FROM payments p JOIN billing_orders o ON o.id=p.order_id JOIN studios s ON s.id=o.studio_id WHERE EXISTS(SELECT 1 FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner') ORDER BY p.updated_at DESC LIMIT 1000")});
+ if(path==='/api/admin/audit' && method==='GET') return json({audit:await all(env,"SELECT a.* FROM audit_logs a WHERE a.studio_id IS NULL OR EXISTS(SELECT 1 FROM users u WHERE u.studio_id=a.studio_id AND u.role='studio_owner') ORDER BY a.created_at DESC LIMIT 1000")});
  if(path==='/api/admin/impersonate' && method==='POST') {
   const b=await body(request),studio=b.studio_id?await one(env,'SELECT id FROM studios WHERE id=?',text(b.studio_id,100)):null;
   if(b.studio_id&&!studio) fail(404,'Conviteira não encontrada.');
