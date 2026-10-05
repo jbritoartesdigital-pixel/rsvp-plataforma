@@ -62,6 +62,13 @@
           "binding": "MEDIA",
           "bucket_name": "rsvp-plataforma-hml-media"
         }
+      ],
+      "workers_dev": true,
+      "routes": [
+        {
+          "pattern": "hml.presencaconfirmada.com.br",
+          "custom_domain": true
+        }
       ]
     }
   }
