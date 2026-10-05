@@ -3,10 +3,18 @@ import {session,owner} from './auth.js';
 export function catalog(env) {
  return [1,5,10].map(n=>({key:`credits_${n}`,kind:'credits',quantity:n,amount_cents:Number(env[`CREDIT_${n}_CENTS`])||null})).concat({key:'monthly',kind:'monthly',quantity:0,amount_cents:Number(env.MONTHLY_CENTS)||2990});
 }
+const mpTestMode=env=>String(env.MP_ACCESS_TOKEN||'').startsWith('TEST-');
 export async function mp(env,path,method='GET',data,key) {
  if(!env.MP_ACCESS_TOKEN) fail(503,'Checkout ainda não configurado.');
  const response=await (env.MP_FETCH||fetch)(`https://api.mercadopago.com${path}`,{method,headers:{authorization:`Bearer ${env.MP_ACCESS_TOKEN}`,'content-type':'application/json',...(key?{'X-Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(15000)});
- if(!response.ok) fail(502,'Mercado Pago indisponível. Tente novamente.');
+ if(!response.ok) {
+  let detail={};try{detail=await response.json();}catch{}
+  const code=detail?.cause?.[0]?.code??detail?.code??response.status;
+  const message=detail?.cause?.[0]?.description??detail?.message??detail?.error;
+  console.error('Mercado Pago request failed',{path,status:response.status,code,message});
+  if(String(env.APP_ORIGIN||'').includes('hml.presencaconfirmada.com.br')&&message) fail(502,`Mercado Pago [${code}]: ${String(message).slice(0,180)}`);
+  fail(502,'Mercado Pago indisponível. Tente novamente.');
+ }
  return response.json();
 }
 export async function signedWebhook(request,env,url,b) {
@@ -107,6 +115,8 @@ export async function billingRoutes(request,env,path,url) {
   const u=await session(request,env); owner(u); if(!u.studio) fail(400,'Selecione uma conviteira.');
   if(!env.MP_ACCESS_TOKEN||!env.MP_WEBHOOK_SECRET||!env.MP_COLLECTOR_ID) fail(503,'Pagamentos ainda não configurados.');
   const b=await body(request),plan=catalog(env).find(p=>p.key===b.plan); if(!plan || !Number.isInteger(plan.amount_cents)||plan.amount_cents<=0) fail(400,'Plano ainda não disponível.');
+  const testMode=mpTestMode(env),payerEmail=testMode?String(b.test_payer_email||'').trim():u.email;
+  if(testMode&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)) fail(400,'Na homologação, informe o e-mail do comprador de teste do Mercado Pago.');
   // Reuse the pending checkout. Recover a failed creation with its stable order/idempotency key.
   let order=await one(env,'SELECT * FROM billing_orders WHERE studio_id=? AND generation=? AND kind=? AND quantity=? AND status=? ORDER BY created_at DESC LIMIT 1',u.studio_id,u.studio.billing_generation,plan.kind,plan.quantity,'pending');
   if(plan.kind==='monthly' && u.studio.billing_mode==='monthly' && u.studio.subscription_id && !order) fail(409,'Sua assinatura já existe. Cancele antes de contratar outra.');
@@ -125,11 +135,12 @@ export async function billingRoutes(request,env,path,url) {
   if(order.checkout_url) return json({checkout_url:order.checkout_url,order_id:order.id});
   const notification=`${env.APP_ORIGIN}/api/webhooks/mercadopago`;
   const payload=plan.kind==='credits'?{
-   items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],payer:{email:u.email},external_reference:order.id,notification_url:notification,
+   items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],payer:{email:payerEmail},external_reference:order.id,notification_url:notification,
    back_urls:{success:`${env.APP_ORIGIN}/app/financeiro`,pending:`${env.APP_ORIGIN}/app/financeiro`,failure:`${env.APP_ORIGIN}/app/financeiro`},auto_return:'approved'
-  }:{reason:'Presença Confirmada · mensal',external_reference:order.id,payer_email:u.email,back_url:`${env.APP_ORIGIN}/app/financeiro`,notification_url:notification,
+  }:{reason:'Presença Confirmada · mensal',external_reference:order.id,payer_email:payerEmail,back_url:`${env.APP_ORIGIN}/app/financeiro`,notification_url:notification,
    auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:order.amount_cents/100,currency_id:'BRL'},status:'pending'};
-  const result=await mp(env,plan.kind==='credits'?'/checkout/preferences':'/preapproval','POST',payload,order.id);
+  const checkoutKey=testMode?`${order.id}-${(await hash(payerEmail)).slice(0,16)}`:order.id;
+  const result=await mp(env,plan.kind==='credits'?'/checkout/preferences':'/preapproval','POST',payload,checkoutKey);
   if(!result.id||!result.init_point) fail(502,'Checkout não retornou um endereço.');
   const checkout=new URL(result.init_point); if(checkout.protocol!=='https:'||!/(^|\.)mercadopago\.(com|com\.br)$/.test(checkout.hostname)) fail(502,'Endereço de checkout inválido.');
   const linked=await env.DB.batch([
