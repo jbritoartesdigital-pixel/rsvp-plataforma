@@ -293,10 +293,14 @@ const safeMedia=value=>/^\/media\/[a-f0-9-]+$/i.test(String(value||''))?String(v
 const safeHref=value=>{try{const u=new URL(String(value||''),location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
 const normalizedName=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 
+const guestSourceLabel=value=>({public:'Convidado',client:'Cliente',admin:'Painel',import:'Importação'}[String(value)]||'Painel');
 function markDuplicates(guests){
- const groups=new Map(),result=guests.map(g=>({...g,possible_duplicate:false}));
+ const groups=new Map(),result=guests.map(g=>({...g,possible_duplicate:false,suggested_keep:false}));
  for(const g of result){const k=normalizedName(g.name);if(!k)continue;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(g);}
- for(const group of groups.values())if(group.length>1)group.forEach(g=>g.possible_duplicate=true);
+ for(const group of groups.values())if(group.length>1){
+  group.sort((a,b)=>{const ar=a.responded_at?0:1,br=b.responded_at?0:1;if(ar!==br)return ar-br;return String(a.created_at||'').localeCompare(String(b.created_at||''))||String(a.id).localeCompare(String(b.id));});
+  group.forEach((g,i)=>{g.possible_duplicate=true;g.suggested_keep=i===0;});
+ }
  return result;
 }
 function openModal(title,body,subtitle=''){
@@ -429,7 +433,7 @@ async function newEvent(){
 }
 function guestRowHtml(e,g,link){
  const people=g.members.filter(m=>m.attendance_status==='yes'),adults=people.filter(m=>m.person_type==='adult').length,children=people.filter(m=>m.person_type==='child').length;
- return `<article class="guest-row guest-card" data-guest="${g.id}" data-name="${escape(normalizedName(g.name+' '+g.group_label+' '+g.members.map(m=>m.name).join(' ')))}" data-status="${g.response_status}" data-duplicate="${g.possible_duplicate?'1':'0'}"><label class="guest-select"><input type="checkbox" data-select-guest="${g.id}"></label><div class="guest-main"><div><strong>${escape(g.group_label||g.name)}</strong><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span>${g.possible_duplicate?'<span class="duplicate-chip">Possível duplicado</span>':''}</div>${g.group_label?`<p>Responsável: ${escape(g.name)}</p>`:''}<p>${g.members.map(m=>`${escape(m.name)}${m.person_type==='child'?' · criança':''}`).join(' · ')}</p><small>${adults} adulto${adults===1?'':'s'} · ${children} criança${children===1?'':'s'}${g.responded_at?` · respondeu ${escape(formatDate(g.responded_at,true))}`:''}</small>${g.message?`<small class="guest-message">“${escape(g.message)}”</small>`:''}</div><div class="guest-actions"><a class="text-action" href="${link}?invite=${encodeURIComponent(g.token)}" target="_blank" rel="noopener">Abrir convite</a><button class="secondary small" data-edit="${g.id}">Editar</button><button class="quiet-danger small" data-delete="${g.id}">Lixeira</button></div></article>`;
+ return `<article class="guest-row guest-card" data-guest="${g.id}" data-name="${escape(normalizedName(g.name+' '+g.group_label+' '+g.members.map(m=>m.name).join(' ')))}" data-status="${g.response_status}" data-duplicate="${g.possible_duplicate?'1':'0'}"><label class="guest-select"><input type="checkbox" data-select-guest="${g.id}"></label><div class="guest-main"><div><strong>${escape(g.group_label||g.name)}</strong><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span>${g.possible_duplicate?`<span class="duplicate-chip ${g.suggested_keep?'keep':'copy'}">${g.suggested_keep?'Provável original':'Possível cópia'}</span>`:''}</div>${g.group_label?`<p>Responsável: ${escape(g.name)}</p>`:''}<p>${g.members.map(m=>`${escape(m.name)}${m.person_type==='child'?' · criança':''}`).join(' · ')}</p><small>${adults} adulto${adults===1?'':'s'} · ${children} criança${children===1?'':'s'}${g.responded_at?` · respondeu ${escape(formatDate(g.responded_at,true))}`:''} · ${escape(guestSourceLabel(g.source))}</small>${g.message?`<small class="guest-message">“${escape(g.message)}”</small>`:''}</div><div class="guest-actions"><a class="text-action" href="${link}?invite=${encodeURIComponent(g.token)}" target="_blank" rel="noopener">Abrir convite</a><button class="secondary small" data-edit="${g.id}">Editar</button><button class="quiet-danger small" data-delete="${g.id}">Lixeira</button></div></article>`;
 }
 async function showHistory(base){
  const {audit}=await api(`${base}/audit`),labels={create_event:'Evento criado',update_event:'Evento atualizado',duplicate_event:'Evento duplicado',guest_created:'Convidado cadastrado',guest_updated:'Convidado editado',guest_deleted:'Convidado enviado à lixeira',guest_restored:'Convidado restaurado',guest_bulk_deleted:'Convidados enviados à lixeira',guest_bulk_restored:'Convidados restaurados',rsvp_submitted:'Confirmação enviada',media_uploaded:'Mídia enviada',media_deleted:'Mídia removida',checkin:'Check-in',client_link_reset:'Link do cliente renovado',client_event_updated:'Cliente editou o evento'};
