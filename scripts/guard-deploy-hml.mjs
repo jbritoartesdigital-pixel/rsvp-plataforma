@@ -14,7 +14,7 @@ if(hmlD1?.database_name!=='rsvp-plataforma-hml-db'||hmlD1?.database_id!=='b01915
 if(hmlR2?.bucket_name!=='rsvp-plataforma-hml-media') throw Error('R2 de homologação inválido.');
 if(hmlD1.database_id===prodD1.database_id||hmlR2.bucket_name===prodR2.bucket_name) throw Error('Homologação não pode usar recursos de produção.');
 if(JSON.stringify(h).includes('libri-rsvp')||JSON.stringify(h).includes('83b4f425-48ae-4b08-b286-83abdae277ed')||JSON.stringify(h).includes('libri-videos')) throw Error('Recurso libri-rsvp proibido.');
-if(h.vars?.APP_ORIGIN!=='https://rsvp-plataforma-hml.jbrito-artesdigital.workers.dev'||h.vars?.RP_ID!=='rsvp-plataforma-hml.jbrito-artesdigital.workers.dev') throw Error('Origem/RP ID de homologação inválidos.');
+if(h.vars?.APP_ORIGIN!=='https://hml.presencaconfirmada.com.br'||h.vars?.RP_ID!=='hml.presencaconfirmada.com.br') throw Error('Origem/RP ID de homologação inválidos.');
 if(new URL(h.vars.APP_ORIGIN).hostname!==h.vars.RP_ID) throw Error('RP_ID de homologação deve corresponder ao domínio.');
 for(const n of [1,5,10]) if(!Number.isInteger(Number(h.vars[`CREDIT_${n}_CENTS`]))||Number(h.vars[`CREDIT_${n}_CENTS`])<=0) throw Error(`Configure preço HML do pacote de ${n} créditos.`);
 if(!Number.isInteger(Number(h.vars.MONTHLY_CENTS))||Number(h.vars.MONTHLY_CENTS)<=0) throw Error('Configure preço mensal HML.');
