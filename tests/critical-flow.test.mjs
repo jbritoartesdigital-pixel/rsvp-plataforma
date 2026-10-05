@@ -280,21 +280,18 @@ test('mídia em R2 pode ser aplicada, listada e removida sem deixar URL ativa',a
 });
 
 
-test('checkout em HML usa e-mail do comprador de teste',async()=>{
+test('checkout em HML usa automaticamente o pagador técnico de teste',async()=>{
  const f=fixture(),a=await f.register();
- f.env.MP_ACCESS_TOKEN='TEST-fake-token';
+ f.env.MP_ACCESS_TOKEN='APP_USR-test-token';
  f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
  let payload;
  f.env.MP_FETCH=async(_url,options)=>{
   payload=JSON.parse(options.body);
   return Response.json({id:'pref-test',init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test'});
  };
- const missing=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
- assert.equal(missing.status,400);
- assert.match(missing.body.error,/comprador de teste/i);
- const ok=await f.request('/api/billing/checkout','POST',{plan:'credits_1',test_payer_email:'buyer@testuser.com'},a.cookie);
+ const ok=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
  assert.equal(ok.status,200);
- assert.equal(payload.payer.email,'buyer@testuser.com');
+ assert.equal(payload.payer.email,'test@testuser.com');
 });
 
 
