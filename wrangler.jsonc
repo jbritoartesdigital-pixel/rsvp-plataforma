@@ -35,7 +35,8 @@
     "CREDIT_1_CENTS": "1490",
     "CREDIT_5_CENTS": "6490",
     "CREDIT_10_CENTS": "10990",
-    "GRACE_DAYS": "0"
+    "GRACE_DAYS": "0",
+    "MP_COLLECTOR_ID": "1233502406736491"
   },
   "env": {
     "hml": {
