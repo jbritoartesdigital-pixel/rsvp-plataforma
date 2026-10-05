@@ -125,9 +125,9 @@ export async function billingRoutes(request,env,path,url) {
   if(order.checkout_url) return json({checkout_url:order.checkout_url,order_id:order.id});
   const notification=`${env.APP_ORIGIN}/api/webhooks/mercadopago`;
   const payload=plan.kind==='credits'?{
-   items:[{id:plan.key,title:`${plan.quantity} crédito(s) RSVP`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],payer:{email:u.email},external_reference:order.id,notification_url:notification,
+   items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],payer:{email:u.email},external_reference:order.id,notification_url:notification,
    back_urls:{success:`${env.APP_ORIGIN}/app/financeiro`,pending:`${env.APP_ORIGIN}/app/financeiro`,failure:`${env.APP_ORIGIN}/app/financeiro`},auto_return:'approved'
-  }:{reason:'RSVP mensal',external_reference:order.id,payer_email:u.email,back_url:`${env.APP_ORIGIN}/app/financeiro`,notification_url:notification,
+  }:{reason:'Presença Confirmada · mensal',external_reference:order.id,payer_email:u.email,back_url:`${env.APP_ORIGIN}/app/financeiro`,notification_url:notification,
    auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:order.amount_cents/100,currency_id:'BRL'},status:'pending'};
   const result=await mp(env,plan.kind==='credits'?'/checkout/preferences':'/preapproval','POST',payload,order.id);
   if(!result.id||!result.init_point) fail(502,'Checkout não retornou um endereço.');
