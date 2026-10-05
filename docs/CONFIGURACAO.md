@@ -5,8 +5,8 @@
 - Conta Cloudflare: `89e909b38d8f7cfe1c1583e77a6df55f`.
 - D1 criado: `rsvp-plataforma-db`, ID `0856c666-5e49-4728-b78c-f22cacf9436d`.
 - R2 criado: `rsvp-plataforma-media`, classe Standard, acesso público direto desativado. O Worker servirá as mídias pelo binding.
-- Endereço inicial configurado: `https://rsvp-plataforma.jbrito-artesdigital.workers.dev`.
-- Worker ainda não publicado: será criado no primeiro deploy manual pelo GitHub Actions, após as migrations. O D1 está vazio; o R2 está vazio.
+- Domínio de produção preparado no código: `https://app.presencaconfirmada.com.br`.
+- O Worker de produção ainda não foi publicado. A homologação já usa Worker, D1 e R2 próprios e será acessada por `https://hml.presencaconfirmada.com.br` quando o domínio estiver ativo e vinculado.
 
 Não recrie esses recursos. A seção seguinte é referência para outro ambiente. Ainda faltam credenciais de publicação no GitHub e dados do Mercado Pago. O guard de deploy continua bloqueando publicação com configuração financeira incompleta.
 
@@ -19,7 +19,7 @@ pnpm exec wrangler d1 create rsvp-plataforma-db
 pnpm exec wrangler r2 bucket create rsvp-plataforma-media
 ```
 
-Em outro ambiente, copie somente o ID do D1 novo para `wrangler.jsonc`. Mantenha os nomes comerciais. O ambiente atual já usa o endereço inicial `workers.dev`; se escolher domínio próprio, configure `vars.APP_ORIGIN` com a origem HTTPS sem barra final e `RP_ID` só com o hostname. Para mudar de domínio depois de cadastrar passkeys, planeje novo cadastro das credenciais no novo RP ID.
+Em outro ambiente, copie somente o ID do D1 novo para `wrangler.jsonc`. Mantenha os nomes comerciais. O ambiente atual usa os domínios próprios `hml.presencaconfirmada.com.br` e `app.presencaconfirmada.com.br`. `APP_ORIGIN` deve conter a origem HTTPS sem barra final e `RP_ID` somente o hostname correspondente. Para mudar de domínio depois de cadastrar passkeys, planeje novo cadastro das credenciais no novo RP ID.
 
 Preços confirmados: `CREDIT_1_CENTS=1490` (1 evento), `CREDIT_5_CENTS=6490` (5 eventos), `CREDIT_10_CENTS=10990` (10 eventos) e `MONTHLY_CENTS=2990` (mensal ilimitado). Configure `MP_COLLECTOR_ID` com o ID da conta Mercado Pago que recebe os pagamentos. `GRACE_DAYS` vai de 0 a 7.
 
@@ -41,7 +41,7 @@ No GitHub, crie o environment `commercial` e os secrets `CLOUDFLARE_API_TOKEN` e
 Após aplicar a migration, use `scripts/bootstrap-admin.mjs` para gerar SQL com o hash da senha. O script lê `BOOTSTRAP_PASSWORD` do ambiente; não coloque a senha na linha de comando nem no Git. Exemplo em PowerShell:
 
 ```powershell
-$senhaAdmin = Read-Host 'Senha inicial (mínimo 12 caracteres)' -AsSecureString
+$senhaAdmin = Read-Host 'Senha inicial (mínimo 8 caracteres)' -AsSecureString
 $env:BOOTSTRAP_PASSWORD = [System.Net.NetworkCredential]::new('', $senhaAdmin).Password
 node scripts/bootstrap-admin.mjs 'SEU_EMAIL' 'SEU_NOME' | Set-Content -Encoding utf8 bootstrap-admin.sql
 Remove-Item Env:BOOTSTRAP_PASSWORD
