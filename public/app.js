@@ -68,6 +68,18 @@ function bindAutoSlug(sourceName,targetName,previewId){
  if(!target.value){target.value=cleanSlug(source.value);}
  paint();
 }
+const localToIso=value=>{
+ if(!value)return '';
+ const d=new Date(value);
+ return Number.isFinite(d.getTime())?d.toISOString():value;
+};
+const toLocalInput=value=>{
+ if(!value)return '';
+ const d=new Date(value);
+ if(!Number.isFinite(d.getTime()))return '';
+ const local=new Date(d.getTime()-d.getTimezoneOffset()*60000);
+ return local.toISOString().slice(0,16);
+};
 const formatDate=(value,time=false)=>{
  if(!value)return '';
  const d=new Date(value);
@@ -148,7 +160,7 @@ async function dashboard(){
  menuEvents();
 }
 function eventFields(e={}){
- const basics=field('title','Nome do evento','text',e.title)+field('event_date','Data e hora · opcional','datetime-local',e.event_date?e.event_date.slice(0,16):'',false)+field('location','Local · opcional','text',e.location,false)+field('deadline','Prazo para confirmar · opcional','datetime-local',e.deadline?e.deadline.slice(0,16):'',false);
+ const basics=field('title','Nome do evento','text',e.title)+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location,false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
  const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Link individual por convite']],e.rsvp_mode||'free')+field('max_people','Limite de pessoas por convite','number',e.max_people||10)+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
  if(e.id)return basics+options+select('status','Situação',[['active','Ativo'],['inactive','Inativo'],['archived','Arquivado']],e.status);
  return basics+`<label><span class="field-label">Endereço do evento<b class="required-mark" aria-hidden="true">*</b></span><input name="slug" required aria-required="true" autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: …/<strong id="event-url-preview">seu-evento</strong></small></label><details class="advanced-options"><summary>Opções do RSVP e check-in</summary><div class="advanced-body">${options}</div></details>`;
@@ -157,7 +169,7 @@ async function newEvent(){
  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>Você pode completar e alterar os detalhes depois. O evento usa um crédito ou sua mensalidade vigente.</p></section><div class="card setup-card">${form('event',eventFields(),'Criar evento')}</div>`;
  menuEvents();
  bindAutoSlug('title','slug','event-url-preview');
- submit('event',async b=>{const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
+ submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
 }
 
 async function eventPage(eventId){
@@ -188,7 +200,7 @@ async function eventPage(eventId){
  </section>`;
  menuEvents();
  click('copy-public',async()=>{await navigator.clipboard.writeText(location.origin+link);notice('Link do RSVP copiado.');});
- submit('settings',async b=>{await api(base,'PATCH',b);notice('Evento atualizado.');});
+ submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');});
  submit('add-guest',async b=>{await api(`${base}/guests`,'POST',b);await eventPage(eventId);});
  submit('import',async b=>{const rows=parseCSV(b.csv),headers=rows.shift();if(headers?.join(',')!=='name,phone,max_people')throw Error('Use o cabeçalho name,phone,max_people.');await api(`${base}/guests`,'POST',{guests:rows.filter(r=>r.some(Boolean)).map(r=>({name:r[0],phone:r[1],max_people:r[2]||e.max_people}))});await eventPage(eventId);});
  submit('appearance',async b=>{await api(base,'PATCH',{appearance:{color:b.color,background:b.background},welcome_message:b.welcome_message});notice('Visual salvo.');});
