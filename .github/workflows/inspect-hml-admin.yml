@@ -24,8 +24,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Consultar papéis de usuários na HML
         run: |
-          pnpm exec wrangler d1 execute DB --remote --env hml --command="SELECT u.name,u.role,s.name AS studio_name FROM users u LEFT JOIN studios s ON s.id=u.studio_id ORDER BY u.created_at ASC;"
-          pnpm exec wrangler d1 execute DB --remote --env hml --command="SELECT role,COUNT(*) AS total FROM users GROUP BY role ORDER BY role;"
+          pnpm exec wrangler d1 execute DB --remote --env hml --command="SELECT s.id,s.name,(SELECT COUNT(*) FROM users u WHERE u.studio_id=s.id) AS users,(SELECT COUNT(*) FROM events e WHERE e.studio_id=s.id) AS events,(SELECT COUNT(*) FROM billing_orders o WHERE o.studio_id=s.id) AS orders,(SELECT COUNT(*) FROM credit_ledger l WHERE l.studio_id=s.id) AS ledger FROM studios s ORDER BY s.created_at ASC;"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
