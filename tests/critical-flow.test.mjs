@@ -229,19 +229,27 @@ test('creation_request_id torna envio livre idempotente sem duplicar família ou
  assert.equal(f.sql('SELECT COUNT(*) n FROM guests').n,1);assert.equal(f.sql('SELECT COUNT(*) n FROM guest_members').n,2);
 });
 
-test('permissões granulares do painel do cliente controlam convidados, mensagens e dados do evento',async()=>{
+test('permissões granulares salvam sem trocar link; rotação explícita invalida o anterior',async()=>{
  const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
  const e=(await f.request('/api/events','POST',{title:'Cliente',slug:'cliente'},a.cookie)).body.event;
- assert.equal((await f.request(`/api/cliente/${e.client_token}/guests`,'POST',{name:'Bloqueado'})).status,403);
- const link=await f.request(`/api/events/${e.id}/client-link`,'POST',{manage_guests:true,manage_event_details:true,view_messages:false,export_guests:true},a.cookie);
- const clientToken=link.body.url.split('/').pop();
- assert.equal((await f.request(`/api/cliente/${clientToken}/guests`,'POST',{name:'Maria',max_people:2})).status,201);
- assert.equal((await f.request(`/api/cliente/${clientToken}/event`,'PATCH',{title:'Cliente editado',location:'Salão'})).status,200);
+ const originalToken=e.client_token;
+ assert.equal((await f.request(`/api/cliente/${originalToken}/guests`,'POST',{name:'Bloqueado'})).status,403);
+
+ const saved=await f.request(`/api/events/${e.id}`,'PATCH',{client_permissions:{manage_guests:true,manage_event_details:true,view_messages:false,export_guests:true}},a.cookie);
+ assert.equal(saved.status,200);assert.equal(saved.body.event.client_token,originalToken);
+ assert.equal((await f.request(`/api/cliente/${originalToken}/guests`,'POST',{name:'Maria',max_people:2})).status,201);
+ assert.equal((await f.request(`/api/cliente/${originalToken}/event`,'PATCH',{title:'Cliente editado',location:'Salão'})).status,200);
  assert.equal(f.sql('SELECT title FROM events WHERE id=?',e.id).title,'Cliente editado');
+
  const g=(await f.request(`/api/events/${e.id}/guests`,'GET',null,a.cookie)).body.guests[0];
  await f.request(`/api/events/${e.id}/guests/${g.id}`,'PATCH',{name:g.name,response_status:'yes',message:'Mensagem privada',members:g.members.map(m=>({id:m.id,name:m.name,person_type:m.person_type,attendance_status:'yes'}))},a.cookie);
- const client=await f.request(`/api/cliente/${clientToken}`);
+ const client=await f.request(`/api/cliente/${originalToken}`);
  assert.equal(client.status,200);assert.equal(client.body.permissions.manage_guests,true);assert.equal(client.body.permissions.view_messages,false);assert.equal(client.body.guests[0].message,'');
+
+ const rotated=await f.request(`/api/events/${e.id}/client-link`,'POST',{manage_guests:true,manage_event_details:true,view_messages:false,export_guests:true},a.cookie);
+ const newToken=rotated.body.url.split('/').pop();assert.notEqual(newToken,originalToken);
+ assert.equal((await f.request(`/api/cliente/${originalToken}`)).status,404);
+ assert.equal((await f.request(`/api/cliente/${newToken}`)).status,200);
 });
 
 test('Turnstile opcional bloqueia sem token e aceita desafio válido',async()=>{
