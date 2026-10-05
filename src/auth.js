@@ -1,7 +1,7 @@
 import { generateRegistrationOptions,verifyRegistrationResponse,generateAuthenticationOptions,verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { fail,now,id,token,b64,unb64,hash,stmt,one,all,run,body,text,slug,limit,audit,json } from './core.js';
 export async function passwordHash(password,salt=token()) {
- text(password,256); if(password.length<12) fail(400,'Use uma senha com pelo menos 12 caracteres.');
+ text(password,256); if(password.length<8) fail(400,'Use uma senha com pelo menos 8 caracteres.');
  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode(salt),iterations:100000},key,256);
  return `${salt}.${b64(new Uint8Array(bits))}`;
