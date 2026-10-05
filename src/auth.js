@@ -65,7 +65,7 @@ export async function authRoutes(request,env,path) {
  }
  if(path.startsWith('/api/team/') && m==='DELETE') {
   const u=await session(request,env); owner(u); const target=path.split('/').pop();
-  await env.DB.batch([stmt(env,"INSERT OR IGNORE INTO user_revocations SELECT id,? FROM users WHERE id=? AND studio_id=? AND role='studio_user'",now(),target,u.studio_id),stmt(env,"DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE id=? AND studio_id=? AND role='studio_user')",target,u.studio_id),stmt(env,'INSERT INTO audit_logs VALUES(?,?,?,?,?,?)',id(),u.studio_id,u.id,'revoke_team_member',JSON.stringify({user_id:target}),now())]);
+  await env.DB.batch([stmt(env,"INSERT OR IGNORE INTO user_revocations SELECT id,? FROM users WHERE id=? AND studio_id=? AND role='studio_user'",now(),target,u.studio_id),stmt(env,"DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE id=? AND studio_id=? AND role='studio_user')",target,u.studio_id),stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),u.studio_id,u.id,'revoke_team_member',JSON.stringify({user_id:target}),now())]);
   return json({ok:true});
  }
  if(path==='/api/auth/reset/request' && m==='POST') {
