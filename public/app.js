@@ -284,11 +284,13 @@ const DEFAULT_APPEARANCE={
 const DEFAULT_EXTRA_FIELDS={phone:true,dietary:true,notes:false,message:true};
 const DEFAULT_CLIENT_PERMISSIONS={view:true,manage_guests:false,manage_appearance:false,manage_texts:false,view_messages:true,export_guests:true,manage_event_details:false};
 const parseObj=(value,fallback={})=>{try{const x=typeof value==='string'?JSON.parse(value):value;return x&&typeof x==='object'&&!Array.isArray(x)?x:fallback;}catch{return fallback;}};
-const eventAppearance=e=>({...DEFAULT_APPEARANCE,...parseObj(e?.appearance)});
+const eventAppearance=e=>{const raw=parseObj(e?.appearance),a={...DEFAULT_APPEARANCE,...raw};if(raw.color&&!raw.button_color)a.button_color=raw.color;if(raw.background&&!raw.background_url&&/^\/media\/[a-f0-9-]+$/i.test(raw.background)){a.background_url=raw.background;a.background_type='image';}return a;};
 const eventExtra=e=>({...DEFAULT_EXTRA_FIELDS,...parseObj(e?.extra_fields)});
 const eventTexts=e=>({...PUBLIC_TEXTS[eventAppearance(e).interface_language==='en'?'en':'pt-BR'],...parseObj(e?.public_texts)});
 const eventLang=e=>eventAppearance(e).interface_language==='en'?'en':'pt-BR';
 const ptr=(e,pt,en)=>eventLang(e)==='en'?en:pt;
+const safeMedia=value=>/^\/media\/[a-f0-9-]+$/i.test(String(value||''))?String(value):'';
+const safeHref=value=>{try{const u=new URL(String(value||''),location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
 const normalizedName=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 
 function markDuplicates(guests){
@@ -478,7 +480,7 @@ function downloadCSV(guests){
  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));link.download='convidados.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
 }
 function publicFrame(e,content){
- const a=eventAppearance(e),t=eventTexts(e),logo=a.logo_url?`<img class="event-logo" src="${escape(a.logo_url)}" alt="">`:'',cover=a.cover_url?`<img class="event-cover" src="${escape(a.cover_url)}" alt="">`:'';
+ const a=eventAppearance(e),t=eventTexts(e),logo=safeMedia(a.logo_url)?`<img class="event-logo" src="${escape(safeMedia(a.logo_url))}" alt="">`:'',cover=safeMedia(a.cover_url)?`<img class="event-cover" src="${escape(safeMedia(a.cover_url))}" alt="">`:'';
  return `<div class="rsvp-shell event-font-${escape(a.font_style)} event-width-${escape(a.card_width)}">${cover}<div class="rsvp-card">${logo}<div class="rsvp-brand">${escape(e.studio_name||'')}</div><span class="eyebrow">${escape(t.eyebrow)}</span><h1>${escape(e.title)}</h1>${content}</div></div>`;
 }
 function publicOptionalFields(e,g={}){
@@ -487,7 +489,7 @@ function publicOptionalFields(e,g={}){
 }
 function publicSuccess(e,guest){
  const t=eventTexts(e),a=eventAppearance(e),yes=guest.response_status==='yes',qrs=guest.qr_token?[{name:guest.name,token:guest.qr_token}]:guest.members.filter(m=>m.qr_token).map(m=>({name:m.name,token:m.qr_token}));
- app.innerHTML=publicFrame(e,`<div class="success-card"><div class="success-mark">${yes?'✓':'♡'}</div><h2>${escape(yes?t.success_title:t.decline_title)}</h2><p>${escape(yes?t.success_message:t.decline_message)}</p>${yes&&e.event_date?`<div class="success-event-summary"><strong>${escape(formatDate(e.event_date,true))}</strong>${(a.calendar_location||e.location)?`<span>${escape(a.calendar_location||e.location)}</span>`:''}</div><button class="full-button" id="calendar">${escape(t.calendar_button)}</button>`:''}${a.invitation_url?`<a class="button secondary full-button" href="${escape(a.invitation_url)}">${escape(t.back_button)}</a>`:''}<a class="button ghost full-button" href="${location.pathname}?invite=${encodeURIComponent(guest.token)}">${ptr(e,'Alterar minha resposta','Change my response')}</a>${qrs.length?`<div class="qr-links"><h3>${ptr(e,'QR de entrada','Entry QR')}</h3>${qrs.map(q=>`<a href="/q/${q.token}">${escape(q.name)}</a>`).join('')}</div>`:''}</div>`);
+ app.innerHTML=publicFrame(e,`<div class="success-card"><div class="success-mark">${yes?'✓':'♡'}</div><h2>${escape(yes?t.success_title:t.decline_title)}</h2><p>${escape(yes?t.success_message:t.decline_message)}</p>${yes&&e.event_date?`<div class="success-event-summary"><strong>${escape(formatDate(e.event_date,true))}</strong>${(a.calendar_location||e.location)?`<span>${escape(a.calendar_location||e.location)}</span>`:''}</div><button class="full-button" id="calendar">${escape(t.calendar_button)}</button>`:''}${safeHref(a.invitation_url)?`<a class="button secondary full-button" href="${escape(safeHref(a.invitation_url))}">${escape(t.back_button)}</a>`:''}<a class="button ghost full-button" href="${location.pathname}?invite=${encodeURIComponent(guest.token)}">${ptr(e,'Alterar minha resposta','Change my response')}</a>${qrs.length?`<div class="qr-links"><h3>${ptr(e,'QR de entrada','Entry QR')}</h3>${qrs.map(q=>`<a href="/q/${q.token}">${escape(q.name)}</a>`).join('')}</div>`:''}</div>`);
  applyAppearance(e.appearance,e.brand);click('calendar',()=>openCalendarMenu(e));
 }
 function freeRsvp(e,endpoint,guest=null){
@@ -519,7 +521,7 @@ function applyAppearance(raw={},brand={}){
  const root=document.documentElement,vars={accent:a.button_color,eventBg:a.background_color,eventCard:a.card_color,eventText:a.text_color,eventMuted:a.muted_color,eventButtonText:a.button_text_color,eventRadius:`${Number(a.card_radius)||22}px`,eventBlur:`${Number(a.card_blur)||0}px`,eventCardOpacity:String(Number(a.card_opacity)||.96),eventOverlayOpacity:String(Number(a.overlay_opacity)||0),eventOverlay:a.overlay_color||'#ffffff'};
  for(const [k,v] of Object.entries(vars))root.style.setProperty(`--${k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase())}`,v);
  const shell=document.querySelector('.rsvp-shell');if(!shell)return;shell.classList.toggle('event-card-glass',a.card_style==='glass');shell.classList.toggle('event-card-solid',a.card_style==='solid');shell.querySelector('.event-media-layer')?.remove();
- if(a.background_url&&/^\/media\/[a-f0-9-]+$/.test(a.background_url)){const layer=document.createElement('div');layer.className='event-media-layer';if(a.background_type==='video'){const v=document.createElement('video');v.src=a.background_url;v.autoplay=true;v.muted=true;v.loop=true;v.playsInline=true;layer.append(v);}else{const img=document.createElement('img');img.src=a.background_url;img.alt='';layer.append(img);}layer.dataset.position=a.background_position||'center';layer.dataset.x=a.background_x||'center';shell.prepend(layer);}
+ if(safeMedia(a.background_url)){const layer=document.createElement('div');layer.className='event-media-layer';if(a.background_type==='video'){const v=document.createElement('video');v.src=a.background_url;v.autoplay=true;v.muted=true;v.loop=true;v.playsInline=true;layer.append(v);}else{const img=document.createElement('img');img.src=a.background_url;img.alt='';layer.append(img);}layer.dataset.position=a.background_position||'center';layer.dataset.x=a.background_x||'center';shell.prepend(layer);}
 }
 async function qrPage(raw){
  const q=await api(`/api/q/${encodeURIComponent(raw)}`);document.title=`QR de entrada · ${q.event_title}`;app.innerHTML=`<div class="rsvp-shell"><div class="rsvp-card qr-card"><span class="eyebrow">Entrada no evento</span><h1>${escape(q.event_title)}</h1><p class="qr-name">${escape(q.name)}</p><div class="qr-frame"><img class="qr" id="qr" alt="QR de entrada"></div><span class="status-chip ${q.checked_in?'success':'neutral'}">${q.checked_in?'Entrada já registrada':'Pronto para apresentar'}</span><p class="muted">${q.checked_in?'Este QR já foi utilizado no check-in.':'Apresente este QR na entrada do evento.'}</p></div></div>`;document.querySelector('#qr').src=await QRCode.toDataURL(location.href,{margin:2,width:460});
