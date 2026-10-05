@@ -304,7 +304,7 @@ test('endpoint de entitlement acompanha bloqueio de criação',async()=>{
  assert.equal(state.status,200);assert.equal(state.body.entitlement.can_create,false);
  assert.match(state.body.entitlement.reason,/crédito|mensalidade/i);
  assert.equal((await f.request('/api/events','POST',{title:'Bloqueado',slug:'bloqueado'},a.cookie)).status,402);
- f.exec('UPDATE studios SET credits=1,billing_mode="credits" WHERE id=?',a.user.studio_id);
+ f.exec("UPDATE studios SET credits=1,billing_mode='credits' WHERE id=?",a.user.studio_id);
  state=await f.request('/api/events/entitlement','GET',null,a.cookie);
  assert.equal(state.body.entitlement.can_create,true);assert.equal(state.body.entitlement.credits,1);
  assert.equal((await f.request('/api/events','POST',{title:'Liberado',slug:'liberado'},a.cookie)).status,201);
