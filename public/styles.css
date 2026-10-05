@@ -749,3 +749,10 @@ body.modal-open{overflow:hidden}
 .mini-logo{display:block;max-width:80px;max-height:45px;object-fit:contain;margin-bottom:10px}
 .appearance-mini-preview.event-card-glass .mini-rsvp-card{backdrop-filter:blur(10px)}
 .appearance-mini-preview.event-card-solid .mini-rsvp-card{background:var(--mini-card,#fff)}
+
+.duplicate-chip.keep{background:#edf6f0;color:#47715a}
+.duplicate-chip.copy{background:#fff0e8;color:#9b5f39}
+.turnstile-error{padding:10px 11px;border:1px solid #eccbd0;border-radius:10px;background:#fff2f3;color:#984252;font-size:10px}
+.client-link-actions{display:grid;gap:8px;margin-top:10px}
+.client-link-actions .client-link{margin:0}
+@media(min-width:720px){.client-link-actions{grid-template-columns:minmax(0,1fr) auto;align-items:center}}
