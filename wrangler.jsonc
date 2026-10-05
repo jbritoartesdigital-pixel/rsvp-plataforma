@@ -10,7 +10,7 @@
   "vars": { "APP_ORIGIN": "https://rsvp-plataforma.jbrito-artesdigital.workers.dev", "RP_ID": "rsvp-plataforma.jbrito-artesdigital.workers.dev", "MONTHLY_CENTS": "2990", "CREDIT_1_CENTS": "1490", "CREDIT_5_CENTS": "6490", "CREDIT_10_CENTS": "10990", "GRACE_DAYS": "0" },
   "env": {
     "hml": {
-      "vars": { "APP_ORIGIN": "https://rsvp-plataforma-hml.jbrito-artesdigital.workers.dev", "RP_ID": "rsvp-plataforma-hml.jbrito-artesdigital.workers.dev", "MONTHLY_CENTS": "2990", "CREDIT_1_CENTS": "1490", "CREDIT_5_CENTS": "6490", "CREDIT_10_CENTS": "10990", "GRACE_DAYS": "0" },
+      "vars": { "APP_ORIGIN": "https://hml.presencaconfirmada.com.br", "RP_ID": "hml.presencaconfirmada.com.br", "MONTHLY_CENTS": "2990", "CREDIT_1_CENTS": "1490", "CREDIT_5_CENTS": "6490", "CREDIT_10_CENTS": "10990", "GRACE_DAYS": "0" },
       "d1_databases": [{ "binding": "DB", "database_name": "rsvp-plataforma-hml-db", "database_id": "b0191527-8fdc-4021-bd51-6c7f205044dc", "migrations_dir": "migrations" }],
       "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "rsvp-plataforma-hml-media" }]
     }
