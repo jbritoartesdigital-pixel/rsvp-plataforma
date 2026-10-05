@@ -141,10 +141,10 @@ export async function billingRoutes(request,env,path,url) {
   if(order.checkout_url) return json({checkout_url:order.checkout_url,order_id:order.id});
 
   const notification=`${env.APP_ORIGIN}/api/webhooks/mercadopago`;
-  const payerEmail=testMode?'test@testuser.com':u.email;
+  const payerEmail=u.email;
   const payload=plan.kind==='credits'?{
    items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],
-   payer:{email:payerEmail},
+   ...(testMode?{}:{payer:{email:payerEmail}}),
    external_reference:order.id,notification_url:notification,
    back_urls:{success:`${env.APP_ORIGIN}/app/financeiro`,pending:`${env.APP_ORIGIN}/app/financeiro`,failure:`${env.APP_ORIGIN}/app/financeiro`},auto_return:'approved'
   }:{
