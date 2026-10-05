@@ -1,5 +1,15 @@
 # Configuração do ambiente comercial
 
+## Recursos já preparados em 5 de outubro de 2026
+
+- Conta Cloudflare: `89e909b38d8f7cfe1c1583e77a6df55f`.
+- D1 criado: `rsvp-plataforma-db`, ID `0856c666-5e49-4728-b78c-f22cacf9436d`.
+- R2 criado: `rsvp-plataforma-media`, classe Standard, acesso público direto desativado. O Worker servirá as mídias pelo binding.
+- Endereço inicial configurado: `https://rsvp-plataforma.jbrito-artesdigital.workers.dev`.
+- Worker ainda não publicado: será criado no primeiro deploy manual pelo GitHub Actions, após as migrations. O D1 está vazio; o R2 está vazio.
+
+Não recrie esses recursos. A seção seguinte é referência para outro ambiente. Ainda faltam credenciais de publicação no GitHub, preços dos créditos e dados do Mercado Pago. O guard de deploy continua bloqueando publicação com configuração financeira incompleta.
+
 ## Recursos novos
 
 Crie os recursos na conta Cloudflare destinada à plataforma:
@@ -9,7 +19,7 @@ pnpm exec wrangler d1 create rsvp-plataforma-db
 pnpm exec wrangler r2 bucket create rsvp-plataforma-media
 ```
 
-Copie somente o ID do D1 novo para `wrangler.jsonc`. Mantenha os nomes comerciais. Configure domínio próprio e `vars.APP_ORIGIN` com a origem HTTPS sem barra final; `RP_ID` contém só o hostname. Para mudar de domínio depois de cadastrar passkeys, planeje novo cadastro das credenciais no novo RP ID.
+Em outro ambiente, copie somente o ID do D1 novo para `wrangler.jsonc`. Mantenha os nomes comerciais. O ambiente atual já usa o endereço inicial `workers.dev`; se escolher domínio próprio, configure `vars.APP_ORIGIN` com a origem HTTPS sem barra final e `RP_ID` só com o hostname. Para mudar de domínio depois de cadastrar passkeys, planeje novo cadastro das credenciais no novo RP ID.
 
 Defina os preços inteiros em centavos em `CREDIT_1_CENTS`, `CREDIT_5_CENTS` e `CREDIT_10_CENTS`. `MONTHLY_CENTS=2990`. Configure `MP_COLLECTOR_ID` com o ID da conta Mercado Pago que recebe os pagamentos. `GRACE_DAYS` vai de 0 a 7.
 

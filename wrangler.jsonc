@@ -1,9 +1,11 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "rsvp-plataforma", "main": "src/index.js",
+  "account_id": "89e909b38d8f7cfe1c1583e77a6df55f",
+  "workers_dev": true,
   "compatibility_date": "2026-10-01", "compatibility_flags": ["nodejs_compat"],
   "assets": { "directory": "./public", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": true },
-  "d1_databases": [{ "binding": "DB", "database_name": "rsvp-plataforma-db", "database_id": "REPLACE_WITH_NEW_COMMERCIAL_D1_ID", "migrations_dir": "migrations" }],
+  "d1_databases": [{ "binding": "DB", "database_name": "rsvp-plataforma-db", "database_id": "0856c666-5e49-4728-b78c-f22cacf9436d", "migrations_dir": "migrations" }],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "rsvp-plataforma-media" }],
-  "vars": { "APP_ORIGIN": "https://REPLACE_COMMERCIAL_DOMAIN", "RP_ID": "REPLACE_COMMERCIAL_DOMAIN", "MONTHLY_CENTS": "2990", "CREDIT_1_CENTS": "", "CREDIT_5_CENTS": "", "CREDIT_10_CENTS": "", "GRACE_DAYS": "0" }
+  "vars": { "APP_ORIGIN": "https://rsvp-plataforma.jbrito-artesdigital.workers.dev", "RP_ID": "rsvp-plataforma.jbrito-artesdigital.workers.dev", "MONTHLY_CENTS": "2990", "CREDIT_1_CENTS": "", "CREDIT_5_CENTS": "", "CREDIT_10_CENTS": "", "GRACE_DAYS": "0" }
 }

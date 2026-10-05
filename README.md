@@ -27,7 +27,7 @@ Para autenticação local, configure `.dev.vars` (ignorado pelo Git) com `APP_OR
 
 ## Publicar no ambiente comercial
 
-Siga [docs/CONFIGURACAO.md](docs/CONFIGURACAO.md). O arquivo `wrangler.jsonc` contém destinos comerciais e marcadores que devem ser substituídos. Os preços dos pacotes de 1, 5 e 10 créditos precisam ser definidos; esses checkouts ficam indisponíveis enquanto o preço não estiver configurado.
+Siga [docs/CONFIGURACAO.md](docs/CONFIGURACAO.md). O D1 e o R2 comerciais já foram criados e estão registrados em `wrangler.jsonc`, junto ao endereço inicial `workers.dev`. O Worker será criado no primeiro deploy manual. Os preços dos pacotes de 1, 5 e 10 créditos precisam ser definidos; esses checkouts ficam indisponíveis enquanto o preço não estiver configurado.
 
 Nenhum deploy ou pagamento real foi executado nesta entrega. Os testes financeiros usam respostas simuladas da API. A operação com credenciais de teste do Mercado Pago e as passkeys nos aparelhos reais devem ser homologadas no domínio comercial.
 
