@@ -18,6 +18,6 @@ if(h.vars?.APP_ORIGIN!=='https://hml.presencaconfirmada.com.br'||h.vars?.RP_ID!=
 if(new URL(h.vars.APP_ORIGIN).hostname!==h.vars.RP_ID) throw Error('RP_ID de homologação deve corresponder ao domínio.');
 for(const n of [1,5,10]) if(!Number.isInteger(Number(h.vars[`CREDIT_${n}_CENTS`]))||Number(h.vars[`CREDIT_${n}_CENTS`])<=0) throw Error(`Configure preço HML do pacote de ${n} créditos.`);
 if(!Number.isInteger(Number(h.vars.MONTHLY_CENTS))||Number(h.vars.MONTHLY_CENTS)<=0) throw Error('Configure preço mensal HML.');
-if('MP_ACCESS_TOKEN' in h.vars||'MP_WEBHOOK_SECRET' in h.vars) throw Error('Segredos Mercado Pago não podem ficar no wrangler.jsonc.');
+for(const secret of ['MP_ACCESS_TOKEN','MP_WEBHOOK_SECRET','TURNSTILE_SECRET','MAILER_TOKEN']) if(secret in h.vars) throw Error(`${secret} não pode ficar no wrangler.jsonc.`);
 
 console.log('Homologação comercial isolada validada.');
