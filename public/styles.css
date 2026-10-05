@@ -1011,3 +1011,41 @@ body.modal-open{overflow:hidden}
     text-align:center;
   }
 }
+
+.admin-shortcut{
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:12px;
+ margin:0 0 16px;
+ padding:14px 15px;
+ border:1px solid #e4d4d6;
+ border-radius:14px;
+ background:#fffaf9;
+}
+.admin-shortcut strong,.admin-shortcut small{display:block}
+.admin-shortcut strong{margin-top:3px;color:#4d3b40;font-size:14px}
+.admin-shortcut small{margin-top:3px;color:var(--muted);font-size:10px}
+.admin-studio-mobile{display:none}
+.admin-studio-card{
+ padding:13px;
+ border:1px solid var(--line);
+ border-radius:13px;
+ background:#fff;
+}
+.admin-studio-card+.admin-studio-card{margin-top:9px}
+.admin-studio-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.admin-studio-head strong,.admin-studio-head small{display:block}
+.admin-studio-head strong{font-size:13px}
+.admin-studio-head small{margin-top:4px;color:var(--muted);font-size:9px;line-height:1.4}
+.admin-studio-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:11px}
+.admin-studio-actions button{width:100%;min-width:0;padding:9px 6px;font-size:9px}
+
+@media(max-width:719px){
+ .admin-shortcut{align-items:stretch;flex-direction:column}
+ .admin-shortcut .button{width:100%}
+ .admin-studio-mobile{display:block;margin-top:12px}
+ .admin-studio-table{display:none}
+ .admin-report-actions{display:grid;grid-template-columns:1fr;gap:7px}
+ .admin-report-actions>*{width:100%}
+}
