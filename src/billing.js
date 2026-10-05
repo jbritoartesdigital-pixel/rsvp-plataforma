@@ -3,7 +3,7 @@ import {session,owner} from './auth.js';
 export function catalog(env) {
  return [1,5,10].map(n=>({key:`credits_${n}`,kind:'credits',quantity:n,amount_cents:Number(env[`CREDIT_${n}_CENTS`])||null})).concat({key:'monthly',kind:'monthly',quantity:0,amount_cents:Number(env.MONTHLY_CENTS)||2990});
 }
-const mpTestMode=env=>String(env.MP_ACCESS_TOKEN||'').startsWith('TEST-');
+const mpTestMode=env=>String(env.APP_ORIGIN||'').includes('hml.presencaconfirmada.com.br');
 export async function mp(env,path,method='GET',data,key) {
  if(!env.MP_ACCESS_TOKEN) fail(503,'Checkout ainda não configurado.');
  const response=await (env.MP_FETCH||fetch)(`https://api.mercadopago.com${path}`,{method,headers:{authorization:`Bearer ${env.MP_ACCESS_TOKEN}`,'content-type':'application/json',...(key?{'X-Idempotency-Key':key}:{})},...(data?{body:JSON.stringify(data)}:{}),signal:AbortSignal.timeout(15000)});
@@ -115,8 +115,7 @@ export async function billingRoutes(request,env,path,url) {
   const u=await session(request,env); owner(u); if(!u.studio) fail(400,'Selecione uma conviteira.');
   if(!env.MP_ACCESS_TOKEN||!env.MP_WEBHOOK_SECRET||!env.MP_COLLECTOR_ID) fail(503,'Pagamentos ainda não configurados.');
   const b=await body(request),plan=catalog(env).find(p=>p.key===b.plan); if(!plan || !Number.isInteger(plan.amount_cents)||plan.amount_cents<=0) fail(400,'Plano ainda não disponível.');
-  const testMode=mpTestMode(env),payerEmail=testMode?String(b.test_payer_email||'').trim():u.email;
-  if(testMode&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payerEmail)) fail(400,'Na homologação, informe o e-mail do comprador de teste do Mercado Pago.');
+  const testMode=mpTestMode(env),payerEmail=testMode?'test@testuser.com':u.email;
   // Reuse the pending checkout. Recover a failed creation with its stable order/idempotency key.
   let order=await one(env,'SELECT * FROM billing_orders WHERE studio_id=? AND generation=? AND kind=? AND quantity=? AND status=? ORDER BY created_at DESC LIMIT 1',u.studio_id,u.studio.billing_generation,plan.kind,plan.quantity,'pending');
   if(plan.kind==='monthly' && u.studio.billing_mode==='monthly' && u.studio.subscription_id && !order) fail(409,'Sua assinatura já existe. Cancele antes de contratar outra.');
