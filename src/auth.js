@@ -18,8 +18,10 @@ export async function session(request,env) {
  const raw=request.headers.get('cookie')?.match(/(?:^|;\s*)rsvp_session=([^;]+)/)?.[1]; if(!raw) fail(401,'Entre na sua conta.');
  const u=await one(env,`SELECT u.id,u.studio_id,u.email,u.name,u.role,s.token_hash,s.impersonated_studio_id FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>? AND NOT EXISTS(SELECT 1 FROM user_revocations r WHERE r.user_id=u.id)`,await hash(raw),now());
  if(!u) fail(401,'Sua sessão expirou.');
- u.real_studio_id=u.studio_id; u.studio_id=u.impersonated_studio_id||u.studio_id;
+ u.real_studio_id=u.studio_id;
+ u.studio_id=u.role==='super_admin'?(u.impersonated_studio_id||null):u.studio_id;
  if(u.studio_id) { u.studio=await one(env,'SELECT * FROM studios WHERE id=?',u.studio_id); if(u.studio?.status!=='active' && u.role!=='super_admin') fail(403,'Conta suspensa.'); }
+ else u.studio=null;
  return u;
 }
 export function owner(u) { if(!['super_admin','studio_owner'].includes(u.role)) fail(403,'Acesso restrito à responsável.'); }
