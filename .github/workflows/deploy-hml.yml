@@ -2,9 +2,6 @@ name: Publicar homologação comercial
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [docs/DEPLOY_HML_NOW]
 
 permissions:
   contents: read
