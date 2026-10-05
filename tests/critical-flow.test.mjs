@@ -20,6 +20,18 @@ test('cadastro → checkout → créditos → evento → RSVP → check-in e rev
  assert.equal((await f.request(`/api/events/${e.id}/checkins`,'POST',{token:g.qr_token},a.cookie)).status,403);
  assert.equal(f.sql('SELECT COUNT(*) n FROM checkins').n,1);
 });
+test('check-in individual registra e lista o nome da pessoa',async()=>{
+ const f=fixture(),a=await f.register();
+ const checkout=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie),order=checkout.body.order_id;
+ f.resources.set('/v1/payments/11',approved(11,order));
+ assert.equal((await f.webhook('payment','11')).status,200);
+ const created=await f.request('/api/events','POST',{title:'Individual',slug:'individual',checkin_mode:'individual'},a.cookie),e=created.body.event;
+ const rsvp=await f.request('/api/public/marca-a/individual/rsvp','POST',{name:'Maria',response_status:'yes',members:[{name:'Maria',person_type:'adult'},{name:'Pedro',person_type:'child'}]});
+ const pedro=rsvp.body.guest.members.find(m=>m.name==='Pedro');assert.ok(pedro.qr_token);
+ assert.equal((await f.request(`/api/events/${e.id}/checkins`,'POST',{token:pedro.qr_token},a.cookie)).status,200);
+ const history=await f.request(`/api/events/${e.id}/checkins`,'GET',null,a.cookie);
+ assert.equal(history.status,200);assert.equal(history.body.checkins[0].name,'Pedro');
+});
 test('mensal: consulta authorized_payments; autorização sem fatura paga não libera evento',async()=>{
  const f=fixture(),a=await f.register();const checkout=await f.request('/api/billing/checkout','POST',{plan:'monthly'},a.cookie),order=f.sql('SELECT * FROM billing_orders WHERE id=?',checkout.body.order_id);
  assert.equal(checkout.status,200);f.resources.set(`/preapproval/${order.provider_id}`,{id:order.provider_id,external_reference:order.id,status:'authorized'});
