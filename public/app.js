@@ -200,9 +200,9 @@ const menu=()=>{
  return `<div class="app-nav-wrap"><nav class="app-tabs" aria-label="Navegação da plataforma">
   ${item('/app','Eventos',p==='/app'||p.startsWith('/app/eventos'))}
   ${item('/app/financeiro','Financeiro',p==='/app/financeiro')}
-  ${item('/app/marca','Minha marca',p==='/app/marca')}
-  ${item('/app/conta','Minha conta',p==='/app/conta')}
-  ${user?.role==='super_admin'?item('/admin','Administração',p==='/admin'):''}
+  ${item('/app/marca','Marca',p==='/app/marca')}
+  ${item('/app/conta','Conta',p==='/app/conta')}
+  ${user?.role==='super_admin'?item('/admin','Admin',p==='/admin'):''}
   <button id="logout" class="nav-logout">Sair</button>
  </nav></div>${user?.impersonated_studio_id?'<div class="impersonation">Você está acessando uma conta como administradora. <button id="stop-impersonation">Encerrar acesso</button></div>':''}`;
 };
