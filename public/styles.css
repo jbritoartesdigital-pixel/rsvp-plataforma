@@ -526,3 +526,29 @@ nav .nav-login{
 .form-alert{margin:0 0 14px;padding:11px 12px;border:1px solid #e4b6bd;border-radius:10px;background:#fff3f4;color:#8b3342;font-size:13px;font-weight:650}
 input.invalid,select.invalid,textarea.invalid{border-color:#b94f61;background:#fffafa}
 .field-error{display:block;margin-top:6px;color:#a13e4e;font-size:11px;font-weight:650}
+
+.flow-intro{padding:34px 0 4px;max-width:720px}
+.flow-intro.compact{padding-top:22px}
+.flow-intro h1{margin:9px 0 10px}
+.flow-intro p{margin:0;color:var(--muted);font-size:14px}
+.setup-card{max-width:640px;margin-top:16px}
+.form-section{padding:4px 0 8px}
+.form-section+.form-section{margin-top:18px;padding-top:22px;border-top:1px solid var(--line)}
+.form-section-head{display:flex;gap:11px;align-items:flex-start;margin-bottom:14px}
+.form-section-head>span{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:28px;height:28px;border-radius:9px;background:linear-gradient(135deg,#f7eeee,#efdfdd);color:#7a4f55;font-size:11px;font-weight:850}
+.form-section-head h2{margin:1px 0 3px;font-size:17px;letter-spacing:-.02em}
+.form-section-head p{margin:0;color:var(--muted);font-size:12px;line-height:1.45}
+.field-hint{display:block;margin-top:6px;color:var(--muted);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.field-hint strong{color:#7a4f55}
+.legal-copy{margin:14px 0 4px;color:var(--muted);font-size:11px;line-height:1.5}
+.advanced-options{margin:18px 0 4px;border:1px solid var(--line);border-radius:12px;background:#fcfafb;overflow:hidden}
+.advanced-options summary{padding:13px 14px;cursor:pointer;color:#5f5359;font-size:13px;font-weight:750;list-style:none}
+.advanced-options summary::-webkit-details-marker{display:none}
+.advanced-options summary:after{content:"+";float:right;color:#9e6a6e;font-size:18px;line-height:1}
+.advanced-options[open] summary:after{content:"–"}
+.advanced-body{padding:0 14px 10px;border-top:1px solid #eee4e4}
+@media(min-width:720px){
+ .flow-intro{padding-top:44px}
+ .setup-card{padding:28px}
+ .form-section-head h2{font-size:18px}
+}
