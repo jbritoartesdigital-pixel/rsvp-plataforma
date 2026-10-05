@@ -121,7 +121,7 @@ function normalizeEventJson(raw){
  const max=Number(raw.max_people??raw.max_people_per_rsvp);if(Number.isInteger(max)&&max>=1&&max<=100)payload.max_people=max;
  if(['off','family','individual'].includes(raw.checkin_mode))payload.checkin_mode=raw.checkin_mode;
  if(['active','inactive','archived'].includes(raw.status))payload.status=raw.status;
- if(raw.extra_fields&&typeof raw.extra_fields==='object'&&!Array.isArray(raw.extra_fields))payload.extra_fields={...raw.extra_fields};
+ if(raw.extra_fields&&typeof raw.extra_fields==='object'&&!Array.isArray(raw.extra_fields)){payload.extra_fields={...raw.extra_fields};if(raw.extra_fields.love_message!==undefined&&raw.extra_fields.message===undefined)payload.extra_fields.message=!!raw.extra_fields.love_message;delete payload.extra_fields.love_message;}
  if(raw.public_texts&&typeof raw.public_texts==='object'&&!Array.isArray(raw.public_texts))payload.public_texts={...raw.public_texts};
  if(raw.client_permissions&&typeof raw.client_permissions==='object'&&!Array.isArray(raw.client_permissions))payload.client_permissions={...raw.client_permissions};
  const oldA=raw.appearance_settings&&typeof raw.appearance_settings==='object'?raw.appearance_settings:{},newA=raw.appearance&&typeof raw.appearance==='object'?raw.appearance:{};
