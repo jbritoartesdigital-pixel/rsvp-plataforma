@@ -280,18 +280,21 @@ test('mídia em R2 pode ser aplicada, listada e removida sem deixar URL ativa',a
 });
 
 
-test('checkout em HML usa automaticamente o pagador técnico de teste',async()=>{
+test('checkout HML não força pagador no avulso e usa e-mail de teste válido na mensalidade',async()=>{
  const f=fixture(),a=await f.register();
  f.env.MP_ACCESS_TOKEN='APP_USR-test-token';
  f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
- let payload;
+ const payloads=[];
  f.env.MP_FETCH=async(_url,options)=>{
-  payload=JSON.parse(options.body);
-  return Response.json({id:'pref-test',init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test'});
+  payloads.push(JSON.parse(options.body));
+  return Response.json({id:'provider-'+payloads.length,init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test'});
  };
- const ok=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
- assert.equal(ok.status,200);
- assert.equal(payload.payer.email,'test@testuser.com');
+ const credit=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
+ assert.equal(credit.status,200);
+ assert.equal(payloads[0].payer,undefined);
+ const monthly=await f.request('/api/billing/checkout','POST',{plan:'monthly'},a.cookie);
+ assert.equal(monthly.status,200);
+ assert.match(payloads[2]?.payer_email||payloads[1]?.payer_email||'',/^test_payer_[0-9]{9}@testuser\.com$/);
 });
 
 
@@ -306,4 +309,17 @@ test('endpoint de entitlement acompanha bloqueio de criação',async()=>{
  assert.equal(state.body.entitlement.can_create,true);assert.equal(state.body.entitlement.credits,1);
  assert.equal((await f.request('/api/events','POST',{title:'Liberado',slug:'liberado'},a.cookie)).status,201);
  assert.equal(f.sql('SELECT credits FROM studios WHERE id=?',a.user.studio_id).credits,0);
+});
+
+
+test('falha ao criar checkout não troca modalidade e não deixa pedido pendente fantasma',async()=>{
+ const f=fixture(),a=await f.register();
+ f.env.MP_FETCH=async()=>Response.json({message:'provider failure',code:'x'},{status:422});
+ const before=f.sql('SELECT billing_mode,billing_generation FROM studios WHERE id=?',a.user.studio_id);
+ const r=await f.request('/api/billing/checkout','POST',{plan:'monthly'},a.cookie);
+ assert.equal(r.status,502);
+ const after=f.sql('SELECT billing_mode,billing_generation,subscription_id,monthly_until FROM studios WHERE id=?',a.user.studio_id);
+ assert.deepEqual(after,{...before,subscription_id:null,monthly_until:null});
+ const order=f.sql('SELECT status,provider_id,checkout_url FROM billing_orders ORDER BY created_at DESC LIMIT 1');
+ assert.deepEqual(order,{status:'failed',provider_id:null,checkout_url:null});
 });
