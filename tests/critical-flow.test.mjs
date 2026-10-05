@@ -327,5 +327,5 @@ test('falha ao criar checkout não troca modalidade e não deixa pedido pendente
  assert.equal(after.subscription_id,null);
  assert.equal(after.monthly_until,null);
  const order=f.sql('SELECT status,provider_id,checkout_url FROM billing_orders ORDER BY created_at DESC LIMIT 1');
- assert.deepEqual(order,{status:'failed',provider_id:null,checkout_url:null});
+ assert.equal(order.status,'failed');assert.equal(order.provider_id,null);assert.equal(order.checkout_url,null);
 });
