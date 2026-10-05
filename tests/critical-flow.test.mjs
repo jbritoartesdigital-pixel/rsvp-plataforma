@@ -280,23 +280,26 @@ test('mídia em R2 pode ser aplicada, listada e removida sem deixar URL ativa',a
 });
 
 
-test('checkout HML não força pagador no avulso e usa e-mail de teste válido na mensalidade',async()=>{
+test('checkout HML usa sandbox no avulso e pagador técnico válido',async()=>{
  const f=fixture(),a=await f.register();
  f.env.MP_ACCESS_TOKEN='APP_USR-test-token';
  f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
  const payloads=[];
- f.env.MP_FETCH=async(_url,options)=>{
-  payloads.push(JSON.parse(options.body));
-  return Response.json({id:'provider-'+payloads.length,init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test'});
+ f.env.MP_FETCH=async(url,options)=>{
+  const path=new URL(url).pathname;
+  if(options.body)payloads.push(JSON.parse(options.body));
+  if(options.method==='POST')return Response.json({id:'provider-'+payloads.length,init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test',sandbox_init_point:'https://sandbox.mercadopago.com/mlb/checkout/pay?pref_id=pref-test'});
+  return Response.json({id:123,site_id:'MLB'});
  };
  const credit=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
  assert.equal(credit.status,200);
- assert.equal(payloads[0].payer,undefined);
+ assert.equal(payloads[0].payer.email,'test@testuser.com');
+ assert.equal(credit.body.checkout_url,'https://sandbox.mercadopago.com/mlb/checkout/pay?pref_id=pref-test');
  const monthly=await f.request('/api/billing/checkout','POST',{plan:'monthly'},a.cookie);
  assert.equal(monthly.status,200);
- assert.match(payloads[2]?.payer_email||payloads[1]?.payer_email||'',/^test_payer_[0-9]{9}@testuser\.com$/);
+ assert.equal(payloads[1].payer_email,'test@testuser.com');
+ assert.match(monthly.body.checkout_url,/^https:\/\/www\.mercadopago\.com\.br\//);
 });
-
 
 test('endpoint de entitlement acompanha bloqueio de criação',async()=>{
  const f=fixture(),a=await f.register();
