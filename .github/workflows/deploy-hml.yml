@@ -38,6 +38,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Desvincular Super Admin de conta conviteira na HML
+        run: |
+          pnpm exec wrangler d1 execute DB --remote --env hml --command="UPDATE sessions SET impersonated_studio_id=NULL WHERE user_id IN (SELECT id FROM users WHERE role='super_admin'); UPDATE users SET studio_id=NULL WHERE role='super_admin';"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Publicar Worker de homologação
         run: pnpm exec wrangler deploy --env hml
         env:
