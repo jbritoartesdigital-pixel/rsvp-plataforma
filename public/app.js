@@ -11,15 +11,51 @@ const labelStatus=value=>({
  yes:'Confirmado',no:'Não vai',monthly:'Mensal',credits:'Créditos',
  suspended:'Suspenso'
 }[String(value)]||String(value??''));
-const field=(name,label,type='text',value='',required=true)=>`<label>${label}<input name="${name}" type="${type}" value="${escape(value)}" ${required?'required':''}></label>`;
-const select=(name,label,items,value)=>`<label>${label}<select name="${name}">${items.map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('')}</select></label>`;
-const form=(id,content,button)=>`<form id="${id}" class="form">${content}<button>${button}</button></form>`;
+const field=(name,label,type='text',value='',required=true)=>{
+ const min=(type==='password')?' minlength="12"':'';
+ const auto=name==='email'?' autocomplete="email"':name==='whatsapp'||name==='phone'?' autocomplete="tel"':name==='name'?' autocomplete="name"':'';
+ return `<label><span class="field-label">${label}${required?'<b class="required-mark" aria-hidden="true">*</b>':''}</span><input name="${name}" type="${type}" value="${escape(value)}" ${required?'required aria-required="true"':''}${min}${auto}></label>`;
+};
+const select=(name,label,items,value)=>`<label><span class="field-label">${label}<b class="required-mark" aria-hidden="true">*</b></span><select name="${name}" required aria-required="true">${items.map(([k,v])=>`<option value="${k}" ${k===value?'selected':''}>${v}</option>`).join('')}</select></label>`;
+const form=(id,content,button)=>`<form id="${id}" class="form" novalidate><div class="form-alert" role="alert" hidden></div>${content}<p class="required-note"><span>*</span> Campos obrigatórios</p><button>${button}</button></form>`;
 const notice=message=>{const el=document.querySelector('#notice');el.textContent=message;el.style.display='block';setTimeout(()=>el.style.display='none',6000);};
 const api=async(path,method='GET',data)=>{
  const r=await fetch(path,{method,headers:data?{'content-type':'application/json'}:{},...(data?{body:JSON.stringify(data)}:{})});
  const b=await r.json();if(!r.ok) throw Error(b.error||'Não foi possível concluir.');return b;
 };
-function submit(id,fn) { document.querySelector(`#${id}`)?.addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try {await fn(Object.fromEntries(new FormData(e.target)),e.target);}catch(err){notice(err.message);}finally{button.disabled=false;}}); }
+function submit(id,fn) {
+ document.querySelector(`#${id}`)?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const form=e.target,button=form.querySelector('button'),alert=form.querySelector('.form-alert');
+  form.querySelectorAll('.field-error').forEach(el=>el.remove());
+  form.querySelectorAll('.invalid').forEach(el=>el.classList.remove('invalid'));
+  if(alert){alert.hidden=true;alert.textContent='';}
+  if(!form.checkValidity()){
+   const invalid=[...form.querySelectorAll('input,select,textarea')].filter(el=>!el.validity.valid);
+   for(const el of invalid){
+    el.classList.add('invalid');
+    const label=el.closest('label');
+    const title=label?.querySelector('.field-label')?.textContent?.replace('*','').trim()||'Este campo';
+    let message=`${title} é obrigatório.`;
+    if(el.validity.typeMismatch) message='Informe um e-mail válido.';
+    else if(el.validity.tooShort) message=`${title} deve ter pelo menos ${el.minLength} caracteres.`;
+    else if(el.validity.rangeUnderflow||el.validity.rangeOverflow) message=`Confira o valor informado em ${title.toLowerCase()}.`;
+    const error=document.createElement('span');
+    error.className='field-error';
+    error.textContent=message;
+    label?.append(error);
+   }
+   if(alert){alert.textContent='Confira os campos destacados antes de continuar.';alert.hidden=false;}
+   invalid[0]?.focus();
+   invalid[0]?.scrollIntoView({behavior:'smooth',block:'center'});
+   return;
+  }
+  button.disabled=true;
+  try {await fn(Object.fromEntries(new FormData(form)),form);}
+  catch(err){notice(err.message);}
+  finally{button.disabled=false;}
+ });
+}
 function click(id,fn) {document.querySelector(`#${id}`)?.addEventListener('click',async e=>{e.preventDefault();try{await fn();}catch(err){notice(err.message);}});}
 const goto=path=>{location.href=path;};
 let user;
