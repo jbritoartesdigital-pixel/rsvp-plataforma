@@ -212,8 +212,18 @@ async function eventPage(eventId){
  document.querySelector('#upload').addEventListener('change',async ev=>{const file=ev.target.files[0];if(!file)return;const result=document.querySelector('#media-result');result.textContent='Enviando…';try{const r=await fetch(`${base}/media`,{method:'POST',headers:{'content-type':file.type},body:file});const b=await r.json();if(!r.ok)throw Error(b.error);const visual=document.querySelector('#appearance');visual.querySelector('[name=background]').value=b.url;await api(base,'PATCH',{appearance:{color:visual.querySelector('[name=color]').value,background:b.url},welcome_message:visual.querySelector('[name=welcome_message]').value});result.textContent='Imagem enviada e salva.';}catch(err){result.textContent='';notice(err.message);}});
 }
 function parseCSV(input){const rows=[[]];let current='',quoted=false;for(let i=0;i<input.length;i++){const c=input[i];if(c==='"'){if(quoted&&input[i+1]==='"'){current+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){rows.at(-1).push(current);current='';}else if(c==='\n'&&!quoted){rows.at(-1).push(current.replace(/\r$/,''));current='';rows.push([]);}else current+=c;}if(quoted)throw Error('CSV com aspas não fechadas.');rows.at(-1).push(current.replace(/\r$/,''));return rows;}
-function downloadCSV(guests){const cell=v=>`"${String(v??'').replace(/^[=+@\-]/,"'function downloadCSV(guests){const cell=v=>`"${String(v??'').replace(/^[=+@\-]/,"'$&").replace(/"/g,'""')}"`;const data=[['name','phone','status','people','message'],...guests.map(g=>[g.name,g.phone,g.response_status,g.members.filter(m=>m.attendance_status==='yes').length,g.message])].map(r=>r.map(cell).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));a.download='convidados.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}").replace(/"/g,'""')}"`;const data=[['nome','telefone','status','pessoas','mensagem'],...guests.map(g=>[g.name,g.phone,labelStatus(g.response_status),g.members.filter(m=>m.attendance_status==='yes').length,g.message])].map(r=>r.map(cell).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));a.download='convidados.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
-
+function downloadCSV(guests){
+ const cell=v=>`"${String(v??'').replace(/^[=+@\-]/,"'$&").replace(/"/g,'""')}"`;
+ const data=[
+  ['nome','telefone','status','pessoas','mensagem'],
+  ...guests.map(g=>[g.name,g.phone,labelStatus(g.response_status),g.members.filter(m=>m.attendance_status==='yes').length,g.message])
+ ].map(r=>r.map(cell).join(',')).join('\r\n');
+ const link=document.createElement('a');
+ link.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));
+ link.download='convidados.csv';
+ link.click();
+ setTimeout(()=>URL.revokeObjectURL(link.href),1000);
+}
 function guestEditor(e,g,endpoint,done,mode=false){
  const publicMode=mode===true,clientMode=mode==='client',externalMode=publicMode||clientMode;
  const members=g?.members?.filter(m=>m.attendance_status!=='no')||[];
