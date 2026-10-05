@@ -6,4 +6,4 @@ execute(['--test','tests/critical-flow.test.mjs','tests/schema.test.mjs']);
 await import('./build.mjs');
 execute(['node_modules/wrangler/bin/wrangler.js','d1','migrations','apply','DB','--local']);
 execute(['node_modules/wrangler/bin/wrangler.js','deploy','--dry-run','--outdir','dist/cloudflare']);
-if(process.env.PLAYWRIGHT_MODULE)await import('../tests/browser-smoke.mjs');
+if(process.env.PLAYWRIGHT_MODULE)await import('../tests/browser-smoke-v2.mjs');
