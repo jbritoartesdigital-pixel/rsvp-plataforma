@@ -6,8 +6,8 @@ test('schema mantém associação composta e bloqueia cruzamento de membros/míd
  const ea=(await f.request('/api/events','POST',{title:'A',slug:'a'},a.cookie)).body.event;
  const eb=(await f.request('/api/events','POST',{title:'B',slug:'b'},b.cookie)).body.event;
  await f.request(`/api/events/${ea.id}/guests`,'POST',{name:'Maria'},a.cookie);const guest=f.sql('SELECT id FROM guests WHERE event_id=?',ea.id);
- assert.throws(()=>f.exec('INSERT INTO guest_members VALUES(?,?,?,?,?,?,?)','cross',guest.id,eb.id,'Maria','adult','yes',null),/FOREIGN KEY/);
- assert.throws(()=>f.exec('INSERT INTO event_media VALUES(?,?,?,?,?,?,?)','media',ea.id,b.user.studio_id,'cross','image/png',1,new Date().toISOString()),/FOREIGN KEY/);
+ assert.throws(()=>f.exec('INSERT INTO guest_members(id,guest_id,event_id,name,person_type,attendance_status,qr_token,is_preapproved) VALUES(?,?,?,?,?,?,?,?)','cross',guest.id,eb.id,'Maria','adult','yes',null,1),/FOREIGN KEY/);
+ assert.throws(()=>f.exec("INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)",'media',ea.id,b.user.studio_id,'cross','image/png',1,new Date().toISOString(),'background_image',''),/FOREIGN KEY/);
  assert.equal(f.env.DB.db.prepare('PRAGMA foreign_key_check').all().length,0);
  assert.equal(f.sql('PRAGMA integrity_check').integrity_check,'ok');
 });
