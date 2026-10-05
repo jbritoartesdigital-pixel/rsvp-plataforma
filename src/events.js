@@ -111,7 +111,7 @@ export async function eventsRoutes(request,env,path,url) {
    }
   }
   if(sub==='checkins') {
-   if(method==='GET') return json({checkins:await all(env,'SELECT c.*,g.name FROM checkins c JOIN guests g ON g.id=c.guest_id WHERE c.event_id=? ORDER BY c.created_at DESC',e.id)});
+   if(method==='GET') return json({checkins:await all(env,'SELECT c.*,COALESCE(m.name,g.name) name FROM checkins c JOIN guests g ON g.id=c.guest_id LEFT JOIN guest_members m ON m.id=c.member_id AND m.guest_id=g.id WHERE c.event_id=? ORDER BY c.created_at DESC',e.id)});
    if(method==='POST') {
     const b=await body(request); let raw=b.token;
     if(!raw && b.guest_id) {
