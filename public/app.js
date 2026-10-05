@@ -57,7 +57,8 @@ function submit(id,fn) {
  });
 }
 function click(id,fn) {document.querySelector(`#${id}`)?.addEventListener('click',async e=>{e.preventDefault();try{await fn();}catch(err){notice(err.message);}});}
-const cleanSlug=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);
+const RESERVED_SLUGS=new Set(['api','app','admin','q','cliente','planos','termos','privacidade','media']);
+const cleanSlug=value=>{let v=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);if(RESERVED_SLUGS.has(v))v=(v+'-evento').slice(0,60);return v;};
 function bindAutoSlug(sourceName,targetName,previewId){
  const source=document.querySelector(`[name="${sourceName}"]`),target=document.querySelector(`[name="${targetName}"]`),preview=document.querySelector(`#${previewId}`);
  if(!source||!target)return;
