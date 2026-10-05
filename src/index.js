@@ -20,7 +20,7 @@ export default {
    if(path.startsWith('/api/')) {
     response=await authRoutes(request,env,path)||await billingRoutes(request,env,path,url)||await eventsRoutes(request,env,path,url)||await adminRoutes(request,env,path)||json({error:'Rota não encontrada.'},404);
    } else if(path.startsWith('/media/')) {
-    const record=await one(env,"SELECT m.* FROM event_media m JOIN events e ON e.id=m.event_id JOIN studios s ON s.id=m.studio_id WHERE m.id=? AND m.deleted_at IS NULL AND e.status='active' AND s.status='active'",path.slice(7));
+    const record=await one(env,"SELECT m.* FROM event_media m JOIN events e ON e.id=m.event_id JOIN studios s ON s.id=m.studio_id WHERE m.id=? AND m.deleted_at IS NULL AND e.status IN ('active','inactive') AND s.status='active'",path.slice(7));
     if(!record) fail(404,'Mídia indisponível.'); const object=await env.MEDIA.get(record.object_key); if(!object) fail(404,'Mídia indisponível.');
     response=new Response(object.body,{headers:{'content-type':record.mime_type,'cache-control':'public, max-age=300','etag':object.httpEtag||''}});
    } else response=await env.ASSETS.fetch(request);
