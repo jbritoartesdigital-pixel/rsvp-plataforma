@@ -167,3 +167,106 @@ test('revogar equipe impede nova sessão e preserva usuário para histórico de 
  assert.equal((await f.request('/api/auth/login','POST',{email:'team@example.com',password:'equipe-senha-longa'})).status,403);
  assert.ok(f.sql('SELECT id FROM users WHERE id=?',staff.id));
 });
+
+
+test('duplicar evento usa entitlement, não copia convidados e arquivar/restaurar funciona',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=2 WHERE id=?',a.user.studio_id);
+ const first=await f.request('/api/events','POST',{title:'Casamento',slug:'casamento',rsvp_mode:'list',list_behavior:'flexible',max_people:5},a.cookie);
+ assert.equal(first.status,201);const e=first.body.event;
+ await f.request(`/api/events/${e.id}/guests`,'POST',{name:'Maria',group_label:'Família Silva',max_people:3},a.cookie);
+ const copy=await f.request(`/api/events/${e.id}/duplicate`,'POST',{},a.cookie);
+ assert.equal(copy.status,201);assert.notEqual(copy.body.event.id,e.id);assert.notEqual(copy.body.event.slug,e.slug);
+ assert.equal(f.sql('SELECT credits FROM studios WHERE id=?',a.user.studio_id).credits,0);
+ assert.equal(f.sql('SELECT COUNT(*) n FROM guests WHERE event_id=?',copy.body.event.id).n,0);
+ assert.equal((await f.request(`/api/events/${copy.body.event.id}/duplicate`,'POST',{},a.cookie)).status,402);
+ assert.equal((await f.request(`/api/events/${e.id}/archive`,'POST',{},a.cookie)).status,200);
+ assert.equal(f.sql('SELECT status FROM events WHERE id=?',e.id).status,'archived');
+ assert.equal((await f.request('/api/events?archived=1','GET',null,a.cookie)).body.events.some(x=>x.id===e.id),true);
+ assert.equal((await f.request(`/api/events/${e.id}/restore`,'POST',{},a.cookie)).status,200);
+ assert.equal(f.sql('SELECT status FROM events WHERE id=?',e.id).status,'active');
+});
+
+test('lixeira preserva família, restaura como pendente e histórico fica indexado por evento',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Festa',slug:'festa'},a.cookie)).body.event;
+ await f.request(`/api/events/${e.id}/guests`,'POST',{name:'Maria',group_label:'Família Silva',members:[{name:'Maria'},{name:'Pedro',person_type:'child'}]},a.cookie);
+ const g=(await f.request(`/api/events/${e.id}/guests`,'GET',null,a.cookie)).body.guests[0];
+ assert.equal((await f.request(`/api/events/${e.id}/guests/${g.id}`,'DELETE',null,a.cookie)).status,200);
+ assert.equal((await f.request(`/api/events/${e.id}/guests`,'GET',null,a.cookie)).body.guests.length,0);
+ const trash=(await f.request(`/api/events/${e.id}/guests?trash=1`,'GET',null,a.cookie)).body.guests;
+ assert.equal(trash.length,1);assert.ok(trash[0].deleted_at);
+ assert.equal((await f.request(`/api/events/${e.id}/guests/${g.id}/restore`,'POST',{},a.cookie)).status,200);
+ const restored=(await f.request(`/api/events/${e.id}/guests`,'GET',null,a.cookie)).body.guests[0];
+ assert.equal(restored.response_status,'pending');assert.equal(restored.members.every(m=>m.attendance_status==='pending'),true);
+ const history=(await f.request(`/api/events/${e.id}/audit`,'GET',null,a.cookie)).body.audit;
+ assert.ok(history.some(x=>x.action==='guest_deleted'));assert.ok(history.some(x=>x.action==='guest_restored'));
+ assert.equal(history.every(x=>x.event_id===e.id),true);
+});
+
+test('lista flexível respeita limites por adulto e criança; lista estrita não aceita nomes novos',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=2 WHERE id=?',a.user.studio_id);
+ const flex=(await f.request('/api/events','POST',{title:'Flexível',slug:'flex',rsvp_mode:'list',list_behavior:'flexible',max_people:4},a.cookie)).body.event;
+ await f.request(`/api/events/${flex.id}/guests`,'POST',{name:'Maria',group_label:'Família',max_people:3,max_adults_allowed:1,max_children_allowed:2,members:[{name:'Maria',person_type:'adult'},{name:'Ana',person_type:'child'}]},a.cookie);
+ const fg=(await f.request(`/api/events/${flex.id}/guests`,'GET',null,a.cookie)).body.guests[0];
+ const base=fg.members.map(m=>({id:m.id,name:m.name,person_type:m.person_type,attendance_status:'yes'}));
+ const ok=await f.request('/api/public/marca-a/flex/rsvp','POST',{token:fg.token,response_status:'yes',members:[...base,{name:'Bia',person_type:'child',attendance_status:'yes'}]});
+ assert.equal(ok.status,200);assert.equal(ok.body.guest.members.filter(m=>m.attendance_status==='yes').length,3);
+ const tooManyAdults=await f.request('/api/public/marca-a/flex/rsvp','POST',{token:fg.token,response_status:'yes',members:[...ok.body.guest.members.map(m=>({id:m.id,name:m.name,person_type:m.person_type,attendance_status:'yes'})),{name:'João',person_type:'adult',attendance_status:'yes'}]});
+ assert.equal(tooManyAdults.status,400);
+ const strict=(await f.request('/api/events','POST',{title:'Estrita',slug:'strict',rsvp_mode:'list',list_behavior:'strict',max_people:3},a.cookie)).body.event;
+ await f.request(`/api/events/${strict.id}/guests`,'POST',{name:'Carlos',members:[{name:'Carlos'}]},a.cookie);
+ const sg=(await f.request(`/api/events/${strict.id}/guests`,'GET',null,a.cookie)).body.guests[0];
+ const rejected=await f.request('/api/public/marca-a/strict/rsvp','POST',{token:sg.token,response_status:'yes',members:[{id:sg.members[0].id,name:'Carlos',person_type:'adult',attendance_status:'yes'},{name:'Pessoa nova',person_type:'adult',attendance_status:'yes'}]});
+ assert.equal(rejected.status,403);
+});
+
+test('creation_request_id torna envio livre idempotente sem duplicar família ou membros',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ await f.request('/api/events','POST',{title:'Livre',slug:'livre',max_people:4},a.cookie);
+ const payload={creation_request_id:'req-abc-123',name:'Maria',response_status:'yes',members:[{name:'Maria'},{name:'Pedro',person_type:'child'}]};
+ const first=await f.request('/api/public/marca-a/livre/rsvp','POST',payload),second=await f.request('/api/public/marca-a/livre/rsvp','POST',payload);
+ assert.equal(first.status,200);assert.equal(second.status,200);assert.equal(first.body.guest.id,second.body.guest.id);
+ assert.equal(f.sql('SELECT COUNT(*) n FROM guests').n,1);assert.equal(f.sql('SELECT COUNT(*) n FROM guest_members').n,2);
+});
+
+test('permissões granulares do painel do cliente controlam convidados, mensagens e dados do evento',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Cliente',slug:'cliente'},a.cookie)).body.event;
+ assert.equal((await f.request(`/api/cliente/${e.client_token}/guests`,'POST',{name:'Bloqueado'})).status,403);
+ const link=await f.request(`/api/events/${e.id}/client-link`,'POST',{manage_guests:true,manage_event_details:true,view_messages:false,export_guests:true},a.cookie);
+ const clientToken=link.body.url.split('/').pop();
+ assert.equal((await f.request(`/api/cliente/${clientToken}/guests`,'POST',{name:'Maria',max_people:2})).status,201);
+ assert.equal((await f.request(`/api/cliente/${clientToken}/event`,'PATCH',{title:'Cliente editado',location:'Salão'})).status,200);
+ assert.equal(f.sql('SELECT title FROM events WHERE id=?',e.id).title,'Cliente editado');
+ const g=(await f.request(`/api/events/${e.id}/guests`,'GET',null,a.cookie)).body.guests[0];
+ await f.request(`/api/events/${e.id}/guests/${g.id}`,'PATCH',{name:g.name,response_status:'yes',message:'Mensagem privada',members:g.members.map(m=>({id:m.id,name:m.name,person_type:m.person_type,attendance_status:'yes'}))},a.cookie);
+ const client=await f.request(`/api/cliente/${clientToken}`);
+ assert.equal(client.status,200);assert.equal(client.body.permissions.manage_guests,true);assert.equal(client.body.permissions.view_messages,false);assert.equal(client.body.guests[0].message,'');
+});
+
+test('Turnstile opcional bloqueia sem token e aceita desafio válido',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ await f.request('/api/events','POST',{title:'Protegido',slug:'protegido'},a.cookie);
+ f.env.TURNSTILE_SECRET='secret';f.env.TURNSTILE_SITEKEY='site-key';
+ f.env.TURNSTILE_FETCH=async(_url,options)=>Response.json({success:options.body.get('response')==='token-ok'});
+ const meta=await f.request('/api/public/marca-a/protegido');assert.equal(meta.body.event.turnstile_sitekey,'site-key');
+ const payload={creation_request_id:'turn-1',name:'Maria',response_status:'yes',members:[{name:'Maria'}]};
+ assert.equal((await f.request('/api/public/marca-a/protegido/rsvp','POST',payload)).status,400);
+ assert.equal((await f.request('/api/public/marca-a/protegido/rsvp','POST',{...payload,turnstile_token:'token-ruim'})).status,400);
+ assert.equal((await f.request('/api/public/marca-a/protegido/rsvp','POST',{...payload,turnstile_token:'token-ok'})).status,200);
+});
+
+test('mídia em R2 pode ser aplicada, listada e removida sem deixar URL ativa',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Mídia',slug:'midia'},a.cookie)).body.event;
+ const worker=(await import('../src/index.js')).default;
+ const upload=await worker.fetch(new Request(`${f.env.APP_ORIGIN}/api/events/${e.id}/media?kind=background_image`,{method:'POST',headers:{origin:f.env.APP_ORIGIN,cookie:a.cookie,'content-type':'image/png','x-file-name':encodeURIComponent('fundo.png')},body:new Uint8Array([1,2,3,4])}),f.env);
+ assert.equal(upload.status,201);const saved=await upload.json();assert.equal(f.mediaStore.size,1);
+ const list=await f.request(`/api/events/${e.id}/media`,'GET',null,a.cookie);assert.equal(list.body.media.length,1);
+ const url=saved.media.url;await f.request(`/api/events/${e.id}`,'PATCH',{appearance:{background_type:'image',background_url:url}},a.cookie);
+ const publicMedia=await worker.fetch(new Request(f.env.APP_ORIGIN+url),f.env);assert.equal(publicMedia.status,200);
+ assert.equal((await f.request(`/api/events/${e.id}/media/${saved.media.id}`,'DELETE',null,a.cookie)).status,200);
+ assert.equal(f.mediaStore.size,0);assert.ok(f.sql('SELECT deleted_at FROM event_media WHERE id=?',saved.media.id).deleted_at);
+ const appearance=JSON.parse(f.sql('SELECT appearance FROM events WHERE id=?',e.id).appearance);assert.equal(appearance.background_url,'');assert.equal(appearance.background_type,'none');
+ const gone=await worker.fetch(new Request(f.env.APP_ORIGIN+url),f.env);assert.equal(gone.status,404);
+});
