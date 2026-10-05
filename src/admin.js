@@ -3,7 +3,11 @@ import {session,admin,passwordHash} from './auth.js';
 export async function adminRoutes(request,env,path) {
  if(!path.startsWith('/api/admin/')) return null;
  const u=await session(request,env); admin(u); const method=request.method;
- if(path==='/api/admin/studios' && method==='GET') return json({studios:await all(env,'SELECT s.*,(SELECT COUNT(*) FROM events e WHERE e.studio_id=s.id) event_count FROM studios s ORDER BY created_at DESC LIMIT 1000')});
+ if(path==='/api/admin/studios' && method==='GET') return json({studios:await all(env,`SELECT s.*,
+  (SELECT COUNT(*) FROM events e WHERE e.studio_id=s.id) event_count,
+  (SELECT u.name FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner' ORDER BY u.created_at ASC LIMIT 1) owner_name,
+  (SELECT u.email FROM users u WHERE u.studio_id=s.id AND u.role='studio_owner' ORDER BY u.created_at ASC LIMIT 1) owner_email
+  FROM studios s ORDER BY s.created_at DESC LIMIT 1000`)});
  if(path==='/api/admin/events' && method==='GET') return json({events:await all(env,'SELECT e.*,s.name studio_name,s.slug studio_slug FROM events e JOIN studios s ON s.id=e.studio_id ORDER BY e.created_at DESC LIMIT 1000')});
  if(path==='/api/admin/financeiro' && method==='GET') return json({orders:await all(env,'SELECT o.*,s.name studio_name FROM billing_orders o JOIN studios s ON s.id=o.studio_id ORDER BY created_at DESC LIMIT 1000'),payments:await all(env,'SELECT * FROM payments ORDER BY updated_at DESC LIMIT 1000')});
  if(path==='/api/admin/audit' && method==='GET') return json({audit:await all(env,'SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1000')});
