@@ -923,3 +923,22 @@ body.modal-open{overflow:hidden}
  body[data-shell="app"]>header{position:static}
  body[data-shell="app"] main{padding-bottom:72px}
 }
+
+.hml-test-strip{
+ display:flex;
+ align-items:flex-start;
+ justify-content:space-between;
+ gap:12px;
+ margin:4px 0 16px;
+ padding:12px 14px;
+ border:1px solid #eadbdd;
+ border-radius:13px;
+ background:#fffaf9;
+}
+.hml-test-strip strong,.hml-test-strip span{display:block}
+.hml-test-strip strong{color:#6d454a;font-size:11px}
+.hml-test-strip>div>span{margin-top:3px;color:var(--muted);font-size:10px;line-height:1.4}
+@media(max-width:719px){
+ .hml-test-strip{margin-top:0;padding:11px 12px}
+ .hml-test-strip .status-chip{flex:0 0 auto}
+}
