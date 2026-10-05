@@ -280,24 +280,23 @@ test('mídia em R2 pode ser aplicada, listada e removida sem deixar URL ativa',a
 });
 
 
-test('checkout HML usa sandbox no avulso e pagador técnico válido',async()=>{
+test('checkout HML usa sandbox sem pré-associar pagador no avulso',async()=>{
  const f=fixture(),a=await f.register();
  f.env.MP_ACCESS_TOKEN='APP_USR-test-token';
  f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
  const payloads=[];
  f.env.MP_FETCH=async(url,options)=>{
-  const path=new URL(url).pathname;
   if(options.body)payloads.push(JSON.parse(options.body));
   if(options.method==='POST')return Response.json({id:'provider-'+payloads.length,init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test',sandbox_init_point:'https://sandbox.mercadopago.com/mlb/checkout/pay?pref_id=pref-test'});
   return Response.json({id:123,site_id:'MLB'});
  };
  const credit=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
  assert.equal(credit.status,200);
- assert.equal(payloads[0].payer.email,'test@testuser.com');
+ assert.equal(payloads[0].payer,undefined);
  assert.equal(credit.body.checkout_url,'https://sandbox.mercadopago.com/mlb/checkout/pay?pref_id=pref-test');
  const monthly=await f.request('/api/billing/checkout','POST',{plan:'monthly'},a.cookie);
  assert.equal(monthly.status,200);
- assert.equal(payloads[1].payer_email,'test@testuser.com');
+ assert.equal(payloads[1].payer_email,a.user.email);
  assert.match(monthly.body.checkout_url,/^https:\/\/www\.mercadopago\.com\.br\//);
 });
 
@@ -355,4 +354,22 @@ test('super admin não herda uma conviteira sem impersonação e só entra em te
  me=await f.request('/api/auth/me','GET',null,adminUser.cookie);
  assert.equal(me.body.user.studio_id,null);
  assert.equal(me.body.user.studio,null);
+});
+
+
+test('conta interna aprovada recebe créditos só na HML',async()=>{
+ const f=fixture();
+ f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
+ const body={name:'Julianna',brand:'Libri Teste',slug:'libri-teste',whatsapp:'11999999999',email:'jbrito.artesdigital@gmail.com',password:'senha-bem-longa-123'};
+ const created=await f.request('/api/auth/register','POST',body);
+ assert.equal(created.status,201);
+ const me=await f.request('/api/auth/me','GET',null,created.cookie);
+ assert.equal(me.body.user.studio.credits,100);
+ assert.equal(me.body.user.studio.billing_mode,'credits');
+
+ const g=fixture();
+ const normal=await g.request('/api/auth/register','POST',{...body,slug:'libri-prod',email:'outro@example.com'});
+ assert.equal(normal.status,201);
+ const normalMe=await g.request('/api/auth/me','GET',null,normal.cookie);
+ assert.equal(normalMe.body.user.studio.credits,0);
 });
