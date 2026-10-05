@@ -96,6 +96,115 @@ function setShell(mode){
  else if(mode==='event')nav.innerHTML='';
  else nav.innerHTML='<a href="/planos">Planos</a><a class="nav-login" href="/app/login">Entrar</a>';
 }
+function jsonDate(value,time=''){
+ if(!value)return '';
+ const raw=String(value).trim();
+ if(/^\d{4}-\d{2}-\d{2}$/.test(raw)){
+  const clock=/^\d{2}:\d{2}/.test(String(time))?String(time).slice(0,5):'12:00';
+  return localToIso(`${raw}T${clock}`);
+ }
+ if(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw))return localToIso(raw);
+ const d=new Date(raw);
+ return Number.isFinite(d.getTime())?d.toISOString():'';
+}
+function normalizeEventJson(raw){
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('O JSON precisa ser um objeto de configuração.');
+ const v=Number(raw.schema_version||1);
+ if(![1,2].includes(v))throw Error('Versão de JSON não reconhecida.');
+ const payload={};
+ if(raw.title!==undefined)payload.title=String(raw.title).trim();
+ if(raw.location!==undefined)payload.location=String(raw.location||'').trim();
+ if(raw.welcome_message!==undefined)payload.welcome_message=String(raw.welcome_message||'').trim();
+ const date=jsonDate(raw.event_date,raw.event_time);
+ if(date)payload.event_date=date;
+ const deadline=jsonDate(raw.deadline||raw.rsvp_deadline);
+ if(deadline)payload.deadline=deadline;
+ if(['free','list'].includes(raw.rsvp_mode))payload.rsvp_mode=raw.rsvp_mode;
+ const max=Number(raw.max_people??raw.max_people_per_rsvp);
+ if(Number.isInteger(max)&&max>=1&&max<=100)payload.max_people=max;
+ if(['off','family','individual'].includes(raw.checkin_mode))payload.checkin_mode=raw.checkin_mode;
+ if(['active','inactive','archived'].includes(raw.status))payload.status=raw.status;
+ const color=raw.appearance?.color||raw.primary_color||raw.appearance_settings?.primary_color||raw.appearance_settings?.primaryColor;
+ if(/^#[a-f0-9]{6}$/i.test(String(color||'')))payload.appearance={color:String(color),background:''};
+ const known=new Set(['schema_version','source','exported_at','title','location','welcome_message','event_date','event_time','deadline','rsvp_deadline','rsvp_mode','max_people','max_people_per_rsvp','checkin_mode','status','appearance','primary_color','appearance_settings']);
+ const ignored=Object.keys(raw).filter(k=>!known.has(k));
+ return {payload,ignored,version:v};
+}
+function exportEventJson(e){
+ const appearance=JSON.parse(e.appearance||'{}');
+ return {
+  schema_version:2,
+  source:'presenca-confirmada',
+  exported_at:new Date().toISOString(),
+  title:e.title,
+  event_date:e.event_date||null,
+  location:e.location||'',
+  deadline:e.deadline||null,
+  rsvp_mode:e.rsvp_mode||'free',
+  max_people:Number(e.max_people||10),
+  checkin_mode:e.checkin_mode||'off',
+  status:e.status||'active',
+  appearance:{color:/^#[a-f0-9]{6}$/i.test(appearance.color||'')?appearance.color:'#a66f73'},
+  welcome_message:e.welcome_message||''
+ };
+}
+function downloadJson(filename,data){
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)+'\n'],{type:'application/json;charset=utf-8'}));
+ a.download=filename;
+ a.click();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+function jsonSummary(payload,ignored=[]){
+ const rows=[
+  ['Evento',payload.title],
+  ['Data',payload.event_date?formatDate(payload.event_date,true):''],
+  ['Local',payload.location],
+  ['Prazo',payload.deadline?formatDate(payload.deadline,true):''],
+  ['Confirmação',payload.rsvp_mode==='list'?'Lista individual':payload.rsvp_mode==='free'?'Link livre':''],
+  ['Limite por convite',payload.max_people],
+  ['Check-in',payload.checkin_mode?({off:'Desativado',family:'Por família',individual:'Por pessoa'}[payload.checkin_mode]):''],
+  ['Cor',payload.appearance?.color],
+  ['Mensagem',payload.welcome_message]
+ ].filter(([,v])=>v!==undefined&&v!==null&&v!=='');
+ return `<div class="json-summary">${rows.map(([k,v])=>`<div><span>${escape(k)}</span><strong>${escape(v)}</strong></div>`).join('')}</div>${ignored.length?`<p class="json-ignored">Campos do sistema antigo que não são usados aqui: ${escape(ignored.join(', '))}.</p>`:''}`;
+}
+function closeJsonModal(){document.querySelector('#json-modal')?.remove();document.body.classList.remove('modal-open');}
+function openJsonImport(eventId=null,currentEvent=null,done=null){
+ closeJsonModal();
+ const wrap=document.createElement('div');
+ wrap.id='json-modal';wrap.className='modal-backdrop';
+ wrap.innerHTML=`<div class="json-modal" role="dialog" aria-modal="true" aria-labelledby="json-title"><button class="modal-close" type="button" aria-label="Fechar">×</button><span class="eyebrow">${eventId?'Evento atual':'Novo evento'}</span><h2 id="json-title">${eventId?'Importar configuração JSON':'Criar evento por JSON'}</h2><p class="muted">${eventId?'Somente os campos presentes serão alterados. Convidados, respostas e links continuam intactos.':'Compatível com o JSON exportado pelo Libri RSVP original e pelo Presença Confirmada.'}</p><label><span class="field-label">Arquivo JSON</span><input id="json-file" type="file" accept="application/json,.json"></label><label><span class="field-label">Ou cole o JSON</span><textarea id="json-text" rows="11" placeholder='{ "schema_version": 1, "title": "..." }'></textarea></label><button class="secondary full-button" id="json-review" type="button">Revisar configuração</button><div id="json-preview"></div></div>`;
+ document.body.append(wrap);document.body.classList.add('modal-open');
+ wrap.querySelector('.modal-close').onclick=closeJsonModal;
+ wrap.addEventListener('click',e=>{if(e.target===wrap)closeJsonModal();});
+ const file=wrap.querySelector('#json-file'),text=wrap.querySelector('#json-text'),preview=wrap.querySelector('#json-preview');
+ file.addEventListener('change',async()=>{const selected=file.files?.[0];if(selected){if(selected.size>250000){notice('O JSON deve ter até 250 KB.');file.value='';return;}text.value=await selected.text();preview.innerHTML='';}});
+ wrap.querySelector('#json-review').onclick=()=>{
+  try{
+   const parsed=JSON.parse(text.value.trim()),{payload,ignored}=normalizeEventJson(parsed);
+   if(!eventId&&!payload.title)throw Error('Para criar um evento, o JSON precisa ter o campo title.');
+   preview.innerHTML=`<div class="json-review-card"><h3>Revisão</h3>${jsonSummary(payload,ignored)}<p class="json-note">${eventId?'O que não estiver no JSON será preservado.':'O evento será criado sem convidados e consumirá 1 crédito, ou usará sua mensalidade vigente.'}</p><button id="json-apply" class="full-button" type="button">${eventId?'Aplicar neste evento':'Criar evento'}</button></div>`;
+   preview.querySelector('#json-apply').onclick=async e=>{
+    const button=e.currentTarget;button.disabled=true;
+    try{
+     if(eventId){
+      await api(`/api/events/${eventId}`,'PATCH',payload);
+      closeJsonModal();notice('Configuração JSON aplicada.');if(done)await done();
+     }else{
+      const body={...payload,slug:cleanSlug(payload.title),rsvp_mode:payload.rsvp_mode||'free',max_people:payload.max_people||10,checkin_mode:payload.checkin_mode||'off'};
+      try{
+       const {event}=await api('/api/events','POST',body);closeJsonModal();goto(`/app/eventos/${event.id}`);
+      }catch(err){
+       if(/já existe/i.test(err.message)){body.slug=`${cleanSlug(payload.title)}-${Date.now().toString(36).slice(-4)}`;const {event}=await api('/api/events','POST',body);closeJsonModal();goto(`/app/eventos/${event.id}`);}
+       else throw err;
+      }
+     }
+    }catch(err){notice(err.message);button.disabled=false;}
+   };
+  }catch(err){preview.innerHTML='';notice(err.message||'JSON inválido.');}
+ };
+}
 const goto=path=>{location.href=path;};
 let user;
 
@@ -154,10 +263,10 @@ async function dashboard(){
    <p>${e.location?escape(e.location):'Local ainda não informado'}</p>
    <div class="event-card-actions"><a class="button small" href="/app/eventos/${e.id}">Gerenciar</a><a class="text-action" href="/${s.slug}/${e.slug}" target="_blank" rel="noopener">Abrir RSVP</a></div>
   </article>`).join('');
- app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">${escape(s.name)}</span><h1>Seus eventos</h1><p>Uma visão rápida do que está ativo e do que vem a seguir.</p></div><a class="button primary" href="/app/eventos/novo">Novo evento</a></section>
+ app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">${escape(s.name)}</span><h1>Seus eventos</h1><p>Uma visão rápida do que está ativo e do que vem a seguir.</p></div><div class="head-actions"><button class="secondary" id="import-json">Importar JSON</button><a class="button primary" href="/app/eventos/novo">Novo evento</a></div></section>
  <section class="summary-grid"><article><span>Eventos</span><strong>${events.length}</strong><small>no total</small></article><article><span>Ativos</span><strong>${active}</strong><small>recebendo respostas</small></article><article><span>Seu plano</span><strong class="summary-text">${escape(billing.title)}</strong><small>${escape(billing.text)}</small></article></section>
  <section class="content-section"><div class="section-row"><div><h2>Todos os eventos</h2><p>Abra um evento para ver convidados, personalização e check-in.</p></div></div>${cards?`<div class="event-grid">${cards}</div>`:`<div class="empty-state"><div class="empty-mark">✓</div><h2>Seu primeiro evento começa aqui</h2><p>Crie a celebração, personalize o RSVP e compartilhe o link com seu cliente.</p><a class="button" href="/app/eventos/novo">Criar primeiro evento</a></div>`}</section>`;
- menuEvents();
+ menuEvents();click('import-json',()=>openJsonImport());
 }
 function eventFields(e={}){
  const basics=field('title','Nome do evento','text',e.title)+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location,false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
@@ -181,7 +290,7 @@ async function eventPage(eventId){
    <div class="guest-main"><div><strong>${escape(g.name)}</strong><span class="status-chip ${statusTone(g.response_status)}">${escape(labelStatus(g.response_status))}</span></div><p>${g.members.length?g.members.map(m=>escape(m.name)).join(', '):'Sem acompanhantes informados'}</p>${g.message?`<small>Mensagem: ${escape(g.message)}</small>`:''}</div>
    <div class="guest-actions"><a class="text-action" href="${link}?invite=${encodeURIComponent(g.token)}" target="_blank" rel="noopener">Abrir convite</a><button class="secondary small" data-edit="${g.id}">Editar</button><button class="quiet-danger small" data-cancel="${g.id}">Cancelar</button></div>
   </article>`).join('');
- app.innerHTML=menu()+`<section class="app-page-head event-head"><div><span class="eyebrow">${escape(user.studio.name)}</span><div class="title-with-status"><h1>${escape(e.title)}</h1><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span></div><p>${e.event_date?escape(formatDate(e.event_date,true)):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''}</p></div><div class="head-actions"><a class="button" href="${link}" target="_blank" rel="noopener">Abrir RSVP</a><button class="secondary" id="copy-public">Copiar link</button>${e.checkin_mode!=='off'?`<a class="button secondary" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}</div></section>
+ app.innerHTML=menu()+`<section class="app-page-head event-head"><div><span class="eyebrow">${escape(user.studio.name)}</span><div class="title-with-status"><h1>${escape(e.title)}</h1><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span></div><p>${e.event_date?escape(formatDate(e.event_date,true)):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''}</p></div><div class="head-actions"><a class="button" href="${link}" target="_blank" rel="noopener">Abrir RSVP</a><button class="secondary" id="copy-public">Copiar link</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button>${e.checkin_mode!=='off'?`<a class="button secondary" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}</div></section>
  <section class="summary-grid event-summary"><article><span>Convites</span><strong>${guests.length}</strong><small>cadastrados</small></article><article><span>Confirmados</span><strong>${confirmed.length}</strong><small>${confirmedPeople} pessoa${confirmedPeople===1?'':'s'}</small></article><article><span>Pendentes</span><strong>${pending}</strong><small>aguardando resposta</small></article></section>
  <section class="workspace-grid">
   <div class="workspace-main">
@@ -200,6 +309,8 @@ async function eventPage(eventId){
  </section>`;
  menuEvents();
  click('copy-public',async()=>{await navigator.clipboard.writeText(location.origin+link);notice('Link do RSVP copiado.');});
+ click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));
+ click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));
  submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');});
  submit('add-guest',async b=>{await api(`${base}/guests`,'POST',b);await eventPage(eventId);});
  submit('import',async b=>{const rows=parseCSV(b.csv),headers=rows.shift()?.map(x=>x.replace(/^\uFEFF/,'').trim().toLowerCase()),header=headers?.join(','),valid=header==='nome,telefone,max_pessoas'||header==='name,phone,max_people';if(!valid)throw Error('Use o cabeçalho nome,telefone,max_pessoas.');await api(`${base}/guests`,'POST',{guests:rows.filter(r=>r.some(Boolean)).map(r=>({name:r[0],phone:r[1],max_people:r[2]||e.max_people}))});await eventPage(eventId);});
