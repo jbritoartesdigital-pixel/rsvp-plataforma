@@ -10,7 +10,7 @@ export async function adminRoutes(request,env,path) {
  if(path==='/api/admin/impersonate' && method==='POST') {
   const b=await body(request),studio=b.studio_id?await one(env,'SELECT id FROM studios WHERE id=?',text(b.studio_id,100)):null;
   if(b.studio_id&&!studio) fail(404,'Conviteira não encontrada.');
-  await env.DB.batch([stmt(env,'UPDATE sessions SET impersonated_studio_id=? WHERE token_hash=?',studio?.id||null,u.token_hash),stmt(env,'INSERT INTO audit_logs VALUES(?,?,?,?,?,?)',id(),studio?.id||null,u.id,'impersonate',JSON.stringify({studio_id:studio?.id||null}),now())]); return json({ok:true});
+  await env.DB.batch([stmt(env,'UPDATE sessions SET impersonated_studio_id=? WHERE token_hash=?',studio?.id||null,u.token_hash),stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),studio?.id||null,u.id,'impersonate',JSON.stringify({studio_id:studio?.id||null}),now())]); return json({ok:true});
  }
  let match=path.match(/^\/api\/admin\/studios\/([^/]+)(?:\/(credits|reset-link))?$/);
  if(match) {
@@ -18,12 +18,12 @@ export async function adminRoutes(request,env,path) {
   if(!match[2] && method==='GET') return json({studio,users:await all(env,'SELECT id,name,email,role FROM users WHERE studio_id=?',studio.id),events:await all(env,'SELECT * FROM events WHERE studio_id=?',studio.id)});
   if(!match[2] && method==='PATCH') {
    const b=await body(request); if(!['active','suspended'].includes(b.status)) fail(400,'Status inválido.');
-   await env.DB.batch([stmt(env,'UPDATE studios SET status=? WHERE id=?',b.status,studio.id),stmt(env,'INSERT INTO audit_logs VALUES(?,?,?,?,?,?)',id(),studio.id,u.id,'studio_status',JSON.stringify({status:b.status}),now())]); return json({ok:true});
+   await env.DB.batch([stmt(env,'UPDATE studios SET status=? WHERE id=?',b.status,studio.id),stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),studio.id,u.id,'studio_status',JSON.stringify({status:b.status}),now())]); return json({ok:true});
   }
   if(match[2]==='credits' && method==='POST') {
    const b=await body(request),delta=integer(b.delta,-10000,10000),reason=text(b.reason,300);
    // Explicit adjustment always has an audit entry in the same transaction.
-   await env.DB.batch([stmt(env,'INSERT INTO credit_ledger VALUES(?,?,?,?,?,?)',id(),studio.id,delta,reason,`admin:${id()}`,now()),stmt(env,'INSERT INTO audit_logs VALUES(?,?,?,?,?,?)',id(),studio.id,u.id,'credit_adjustment',JSON.stringify({delta,reason}),now())]); return json({ok:true});
+   await env.DB.batch([stmt(env,'INSERT INTO credit_ledger VALUES(?,?,?,?,?,?)',id(),studio.id,delta,reason,`admin:${id()}`,now()),stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),studio.id,u.id,'credit_adjustment',JSON.stringify({delta,reason}),now())]); return json({ok:true});
   }
   if(match[2]==='reset-link' && method==='POST') {
    const user=await one(env,"SELECT id FROM users WHERE studio_id=? AND role='studio_owner'",studio.id),raw=token();
