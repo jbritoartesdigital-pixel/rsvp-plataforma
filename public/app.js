@@ -189,7 +189,9 @@ function openJsonImport(eventId=null,currentEvent=null,done=null){
     const button=e.currentTarget;button.disabled=true;
     try{
      if(eventId){
-      await api(`/api/events/${eventId}`,'PATCH',payload);
+      const update={...payload};
+      if(update.appearance&&currentEvent){const currentAppearance=JSON.parse(currentEvent.appearance||'{}');update.appearance={...currentAppearance,...update.appearance};}
+      await api(`/api/events/${eventId}`,'PATCH',update);
       closeJsonModal();notice('Configuração JSON aplicada.');if(done)await done();
      }else{
       const body={...payload,slug:cleanSlug(payload.title),rsvp_mode:payload.rsvp_mode||'free',max_people:payload.max_people||10,checkin_mode:payload.checkin_mode||'off'};
