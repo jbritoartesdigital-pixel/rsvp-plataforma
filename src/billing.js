@@ -115,39 +115,69 @@ export async function billingRoutes(request,env,path,url) {
   const u=await session(request,env); owner(u); if(!u.studio) fail(400,'Selecione uma conviteira.');
   if(!env.MP_ACCESS_TOKEN||!env.MP_WEBHOOK_SECRET||!env.MP_COLLECTOR_ID) fail(503,'Pagamentos ainda não configurados.');
   const b=await body(request),plan=catalog(env).find(p=>p.key===b.plan); if(!plan || !Number.isInteger(plan.amount_cents)||plan.amount_cents<=0) fail(400,'Plano ainda não disponível.');
-  const testMode=mpTestMode(env),payerEmail=testMode?'test@testuser.com':u.email;
-  // Reuse the pending checkout. Recover a failed creation with its stable order/idempotency key.
-  let order=await one(env,'SELECT * FROM billing_orders WHERE studio_id=? AND generation=? AND kind=? AND quantity=? AND status=? ORDER BY created_at DESC LIMIT 1',u.studio_id,u.studio.billing_generation,plan.kind,plan.quantity,'pending');
+  const testMode=mpTestMode(env);
+
+  let order=await one(env,'SELECT * FROM billing_orders WHERE studio_id=? AND kind=? AND quantity=? AND status=? ORDER BY created_at DESC LIMIT 1',u.studio_id,plan.kind,plan.quantity,'pending');
   if(plan.kind==='monthly' && u.studio.billing_mode==='monthly' && u.studio.subscription_id && !order) fail(409,'Sua assinatura já existe. Cancele antes de contratar outra.');
   if(!order) {
    const switching=u.studio.billing_mode!==plan.kind;
-   // Cancel the remote recurring charge before committing a switch away from monthly.
-   if(switching && u.studio.subscription_id) await mp(env,`/preapproval/${u.studio.subscription_id}`,'PUT',{status:'cancelled'});
-   const orderId=id(),gen=u.studio.billing_generation+(switching || plan.kind==='monthly'?1:0);
-   const results=await env.DB.batch([
-    stmt(env,'UPDATE studios SET billing_mode=?,billing_generation=?,subscription_id=CASE WHEN ? THEN NULL ELSE subscription_id END,monthly_until=CASE WHEN ? THEN NULL ELSE monthly_until END WHERE id=? AND billing_generation=?',plan.kind,gen,switching?1:0,switching?1:0,u.studio_id,u.studio.billing_generation),
-    stmt(env,'INSERT INTO billing_orders(id,studio_id,generation,kind,quantity,amount_cents,status,provider_id,checkout_url,created_at) SELECT ?,id,billing_generation,?,?,?,\'pending\',NULL,NULL,? FROM studios WHERE id=? AND billing_generation=? AND changes()=1',orderId,plan.kind,plan.quantity,plan.amount_cents,now(),u.studio_id,gen)
-   ]);
-   if(!results[0].meta.changes || !results[1].meta.changes) fail(409,'Seu plano foi alterado. Atualize a página.');
+   const orderId=id(),generation=u.studio.billing_generation+(switching||plan.kind==='monthly'?1:0);
+   const inserted=await run(env,`INSERT INTO billing_orders(id,studio_id,generation,kind,quantity,amount_cents,status,provider_id,checkout_url,created_at)
+    SELECT ?,id,?,?,?,?, 'pending',NULL,NULL,? FROM studios WHERE id=? AND billing_generation=?`,
+    orderId,generation,plan.kind,plan.quantity,plan.amount_cents,now(),u.studio_id,u.studio.billing_generation);
+   if(!inserted.meta.changes) fail(409,'Seu plano foi alterado. Atualize a página.');
    order=await one(env,'SELECT * FROM billing_orders WHERE id=?',orderId);
   }
   if(order.checkout_url) return json({checkout_url:order.checkout_url,order_id:order.id});
+
   const notification=`${env.APP_ORIGIN}/api/webhooks/mercadopago`;
+  let payerEmail=u.email;
+  if(testMode&&plan.kind==='monthly') {
+   const digest=await hash(order.id),number=(parseInt(digest.slice(0,8),16)%900000000)+100000000;
+   payerEmail=`test_payer_${number}@testuser.com`;
+  }
   const payload=plan.kind==='credits'?{
-   items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],payer:{email:payerEmail},external_reference:order.id,notification_url:notification,
+   items:[{id:plan.key,title:`${plan.quantity} crédito(s) Presença Confirmada`,quantity:1,currency_id:'BRL',unit_price:order.amount_cents/100}],
+   ...(testMode?{}:{payer:{email:u.email}}),
+   external_reference:order.id,notification_url:notification,
    back_urls:{success:`${env.APP_ORIGIN}/app/financeiro`,pending:`${env.APP_ORIGIN}/app/financeiro`,failure:`${env.APP_ORIGIN}/app/financeiro`},auto_return:'approved'
-  }:{reason:'Presença Confirmada · mensal',external_reference:order.id,payer_email:payerEmail,back_url:`${env.APP_ORIGIN}/app/financeiro`,notification_url:notification,
-   auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:order.amount_cents/100,currency_id:'BRL'},status:'pending'};
-  const checkoutKey=testMode?`${order.id}-${(await hash(payerEmail)).slice(0,16)}`:order.id;
-  const result=await mp(env,plan.kind==='credits'?'/checkout/preferences':'/preapproval','POST',payload,checkoutKey);
-  if(!result.id||!result.init_point) fail(502,'Checkout não retornou um endereço.');
-  const checkout=new URL(result.init_point); if(checkout.protocol!=='https:'||!/(^|\.)mercadopago\.(com|com\.br)$/.test(checkout.hostname)) fail(502,'Endereço de checkout inválido.');
+  }:{
+   reason:'Presença Confirmada · mensal',external_reference:order.id,payer_email:payerEmail,
+   back_url:`${env.APP_ORIGIN}/app/financeiro`,notification_url:notification,
+   auto_recurring:{frequency:1,frequency_type:'months',transaction_amount:order.amount_cents/100,currency_id:'BRL'},status:'pending'
+  };
+  const checkoutKey=plan.kind==='monthly'?`${order.id}-${(await hash(payerEmail)).slice(0,16)}`:order.id;
+
+  let result;
+  try{
+   result=await mp(env,plan.kind==='credits'?'/checkout/preferences':'/preapproval','POST',payload,checkoutKey);
+   if(!result.id||!result.init_point) fail(502,'Checkout não retornou um endereço.');
+   const checkout=new URL(result.init_point); if(checkout.protocol!=='https:'||!/(^|\.)mercadopago\.(com|com\.br)$/.test(checkout.hostname)) fail(502,'Endereço de checkout inválido.');
+  }catch(error){
+   await run(env,"UPDATE billing_orders SET status='failed' WHERE id=? AND provider_id IS NULL",order.id);
+   throw error;
+  }
+
+  const switching=u.studio.billing_mode!==plan.kind;
+  if(switching&&u.studio.billing_mode==='monthly'&&u.studio.subscription_id) {
+   try{await mp(env,`/preapproval/${u.studio.subscription_id}`,'PUT',{status:'cancelled'});}
+   catch(error){
+    if(plan.kind==='monthly')await mp(env,`/preapproval/${encodeURIComponent(result.id)}`,'PUT',{status:'cancelled'}).catch(()=>{});
+    await run(env,"UPDATE billing_orders SET status='failed' WHERE id=?",order.id);
+    throw error;
+   }
+  }
+
   const linked=await env.DB.batch([
-   stmt(env,'UPDATE billing_orders SET provider_id=?,checkout_url=? WHERE id=?',String(result.id),result.init_point,order.id),
-   ...(plan.kind==='monthly'?[stmt(env,"UPDATE studios SET subscription_id=? WHERE id=? AND billing_generation=? AND billing_mode='monthly'",String(result.id),u.studio_id,order.generation)]:[])
+   stmt(env,`UPDATE studios SET billing_mode=?,billing_generation=?,
+    subscription_id=CASE WHEN ?='monthly' THEN ? WHEN ? THEN NULL ELSE subscription_id END,
+    monthly_until=CASE WHEN ?='monthly' THEN NULL WHEN ? THEN NULL ELSE monthly_until END
+    WHERE id=? AND billing_generation=?`,
+    plan.kind,order.generation,plan.kind,plan.kind==='monthly'?String(result.id):null,switching?1:0,plan.kind,switching?1:0,u.studio_id,u.studio.billing_generation),
+   stmt(env,'UPDATE billing_orders SET provider_id=?,checkout_url=? WHERE id=? AND status=?',String(result.id),result.init_point,order.id,'pending')
   ]);
-  if(plan.kind==='monthly' && !linked[1].meta.changes) {
-   await mp(env,`/preapproval/${encodeURIComponent(result.id)}`,'PUT',{status:'cancelled'});
+  if(!linked[0].meta.changes||!linked[1].meta.changes) {
+   if(plan.kind==='monthly')await mp(env,`/preapproval/${encodeURIComponent(result.id)}`,'PUT',{status:'cancelled'}).catch(()=>{});
    await run(env,"UPDATE billing_orders SET status='cancelled' WHERE id=?",order.id);
    fail(409,'A modalidade foi alterada durante o checkout. Atualize a página.');
   }
