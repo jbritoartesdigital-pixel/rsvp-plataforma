@@ -12,6 +12,23 @@ const parseObject=(value,fallback={})=>{
  catch{return fallback;}
 };
 const boolObject=(value,defaults)=>Object.fromEntries(Object.keys(defaults).map(k=>[k,value?.[k]===undefined?defaults[k]:!!value[k]]));
+function cleanAppearance(value,current={}) {
+ const raw=parseObject(value),out={...parseObject(current)};
+ const colorKeys=['color','button_color','button_text_color','background_color','card_color','text_color','muted_color','overlay_color'];
+ for(const key of colorKeys)if(raw[key]!==undefined&&/^#[a-f0-9]{6}$/i.test(String(raw[key])))out[key]=String(raw[key]);
+ const enumValues={font_style:['modern','elegant','friendly'],card_style:['soft','glass','solid'],background_position:['center','top','bottom'],background_x:['left','center','right'],card_width:['narrow','medium','wide'],interface_language:['pt-BR','en'],background_type:['none','image','video']};
+ for(const [key,values] of Object.entries(enumValues))if(raw[key]!==undefined&&values.includes(raw[key]))out[key]=raw[key];
+ const ranges={overlay_opacity:[0,1],card_opacity:[.55,1],card_blur:[0,30],card_radius:[0,40]};
+ for(const [key,[min,max]] of Object.entries(ranges))if(raw[key]!==undefined){const n=Number(raw[key]);if(Number.isFinite(n)&&n>=min&&n<=max)out[key]=n;}
+ const mediaKeys=['background_url','cover_url','logo_url'];
+ for(const key of mediaKeys)if(raw[key]!==undefined)out[key]=/^\/media\/[a-f0-9-]+$/i.test(String(raw[key]))?String(raw[key]):'';
+ if(raw.background!==undefined&&!raw.background_url&&/^\/media\/[a-f0-9-]+$/i.test(String(raw.background))){out.background_url=String(raw.background);out.background_type='image';}
+ for(const key of ['invitation_url'])if(raw[key]!==undefined){try{const u=new URL(String(raw[key]));out[key]=['http:','https:'].includes(u.protocol)?u.href:'';}catch{out[key]='';}}
+ if(raw.calendar_location!==undefined)out.calendar_location=text(raw.calendar_location,500,false);
+ if(raw.calendar_end_time!==undefined)out.calendar_end_time=/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(raw.calendar_end_time))?String(raw.calendar_end_time):'';
+ return out;
+}
+
 const nullableLimit=(value)=>{
  if(value===undefined||value===null||value==='')return null;
  return integer(value,0,100);
@@ -168,7 +185,7 @@ async function uniqueEventSlug(env,studioId,base) {
 async function insertEvent(env,u,b,{copyOf=null}={}) {
  const eventId=id(),created=now();
  const eventSlug=await uniqueEventSlug(env,u.studio_id,b.slug||b.title);
- const appearance=b.appearance?safeObject(b.appearance):'{}';
+ const appearance=b.appearance?safeObject(cleanAppearance(b.appearance)):'{}';
  const extra=safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)});
  const publicTexts=safeObject(parseObject(b.public_texts));
  const permissions=safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS));
@@ -291,7 +308,7 @@ export async function eventsRoutes(request,env,path,url) {
     if(b.deadline!==undefined){sets.push('deadline=?');args.push(date(b.deadline));}
     if(b.extra_fields!==undefined){sets.push('extra_fields=?');args.push(safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}));}
    }
-   if(permissions.manage_appearance&&b.appearance!==undefined){sets.push('appearance=?');args.push(safeObject(b.appearance));}
+   if(permissions.manage_appearance&&b.appearance!==undefined){sets.push('appearance=?');args.push(safeObject(cleanAppearance(b.appearance,e.appearance)));}
    if(permissions.manage_texts){
     if(b.welcome_message!==undefined){sets.push('welcome_message=?');args.push(text(b.welcome_message,2000,false));}
     if(b.public_texts!==undefined){sets.push('public_texts=?');args.push(safeObject(b.public_texts));}
@@ -337,7 +354,7 @@ export async function eventsRoutes(request,env,path,url) {
     text(b.title??e.title),date(b.event_date??e.event_date),text(b.location??e.location,300,false),date(b.deadline===undefined?e.deadline:b.deadline),
     nextStatus,choice(b.rsvp_mode??e.rsvp_mode,['free','list']),choice(b.list_behavior??e.list_behavior,['strict','flexible']),
     integer(b.max_people??e.max_people,1,100),choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
-    b.appearance?safeObject(b.appearance):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
+    b.appearance?safeObject(cleanAppearance(b.appearance,e.appearance)):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
     b.public_texts?safeObject(b.public_texts):e.public_texts,b.client_permissions?safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS)):e.client_permissions,text(b.welcome_message??e.welcome_message,2000,false),
     nextStatus==='archived'?(e.archived_at||now()):null,e.id,u.studio_id);
    await audit(env,u.studio_id,u.id,'update_event',{event_id:e.id,status:nextStatus});
