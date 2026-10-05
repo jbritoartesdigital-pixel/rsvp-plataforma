@@ -278,3 +278,21 @@ test('mídia em R2 pode ser aplicada, listada e removida sem deixar URL ativa',a
  const appearance=JSON.parse(f.sql('SELECT appearance FROM events WHERE id=?',e.id).appearance);assert.equal(appearance.background_url,'');assert.equal(appearance.background_type,'none');
  const gone=await worker.fetch(new Request(f.env.APP_ORIGIN+url),f.env);assert.equal(gone.status,404);
 });
+
+
+test('checkout em HML usa e-mail do comprador de teste',async()=>{
+ const f=fixture(),a=await f.register();
+ f.env.MP_ACCESS_TOKEN='TEST-fake-token';
+ f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
+ let payload;
+ f.env.MP_FETCH=async(_url,options)=>{
+  payload=JSON.parse(options.body);
+  return Response.json({id:'pref-test',init_point:'https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=pref-test'});
+ };
+ const missing=await f.request('/api/billing/checkout','POST',{plan:'credits_1'},a.cookie);
+ assert.equal(missing.status,400);
+ assert.match(missing.body.error,/comprador de teste/i);
+ const ok=await f.request('/api/billing/checkout','POST',{plan:'credits_1',test_payer_email:'buyer@testuser.com'},a.cookie);
+ assert.equal(ok.status,200);
+ assert.equal(payload.payer.email,'buyer@testuser.com');
+});
