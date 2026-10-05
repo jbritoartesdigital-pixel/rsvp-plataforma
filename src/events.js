@@ -35,6 +35,21 @@ const nullableLimit=(value)=>{
 };
 const memberKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 
+async function eventEntitlement(env,studioId){
+ const s=await one(env,'SELECT status,billing_mode,credits,monthly_until FROM studios WHERE id=?',studioId);
+ if(!s||s.status!=='active')return {can_create:false,mode:s?.billing_mode||'credits',credits:Number(s?.credits||0),monthly_until:s?.monthly_until||null,reason:'Esta conta não está liberada para criar eventos.'};
+ const stamp=now(),monthly=s.billing_mode==='monthly'&&s.monthly_until&&s.monthly_until>stamp,credits=s.billing_mode==='credits'&&Number(s.credits)>0;
+ if(monthly)return {can_create:true,mode:'monthly',credits:Number(s.credits||0),monthly_until:s.monthly_until,reason:''};
+ if(credits)return {can_create:true,mode:'credits',credits:Number(s.credits||0),monthly_until:s.monthly_until||null,reason:''};
+ const reason=s.billing_mode==='monthly'?'Sua mensalidade ainda não está vigente. Conclua o pagamento para criar eventos.':'Você não tem créditos disponíveis. Compre um crédito ou ative a mensalidade para criar eventos.';
+ return {can_create:false,mode:s.billing_mode,credits:Number(s.credits||0),monthly_until:s.monthly_until||null,reason};
+}
+async function requireEventEntitlement(env,studioId){
+ const entitlement=await eventEntitlement(env,studioId);
+ if(!entitlement.can_create)fail(402,entitlement.reason);
+ return entitlement;
+}
+
 export async function tenantEvent(env,user,eventId) {
  if(!user.studio_id) fail(400,'Selecione uma conviteira.');
  const e=await one(env,'SELECT * FROM events WHERE id=? AND studio_id=?',eventId,user.studio_id);
@@ -187,6 +202,7 @@ async function uniqueEventSlug(env,studioId,base) {
 }
 
 async function insertEvent(env,u,b,{copyOf=null}={}) {
+ await requireEventEntitlement(env,u.studio_id);
  const eventId=id(),created=now();
  const eventSlug=await uniqueEventSlug(env,u.studio_id,b.slug||b.title);
  const appearance=b.appearance?safeObject(cleanAppearance(b.appearance)):'{}';
@@ -326,6 +342,12 @@ export async function eventsRoutes(request,env,path,url) {
   fail(403,'Permissão não disponível nesse link.');
  }
 
+ if(path==='/api/events/entitlement'){
+  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
+  if(method!=='GET')fail(405,'Método não permitido.');
+  return json({entitlement:await eventEntitlement(env,u.studio_id)});
+ }
+
  if(path==='/api/events'){
   const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
   if(method==='GET'){
@@ -335,7 +357,7 @@ export async function eventsRoutes(request,env,path,url) {
     (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='yes') yes_count,
     (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='pending') pending_count
     FROM events e WHERE e.studio_id=? AND e.status ${archived?"='archived'":"<>'archived'"} ORDER BY e.created_at DESC LIMIT 500`,u.studio_id);
-   return json({events});
+   return json({events,entitlement:await eventEntitlement(env,u.studio_id)});
   }
   if(method==='POST'){
    const event=await insertEvent(env,u,await body(request));
