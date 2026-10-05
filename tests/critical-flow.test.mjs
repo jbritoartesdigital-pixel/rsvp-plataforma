@@ -329,3 +329,30 @@ test('falha ao criar checkout não troca modalidade e não deixa pedido pendente
  const order=f.sql('SELECT status,provider_id,checkout_url FROM billing_orders ORDER BY created_at DESC LIMIT 1');
  assert.equal(order.status,'failed');assert.equal(order.provider_id,null);assert.equal(order.checkout_url,null);
 });
+
+
+test('super admin não herda uma conviteira sem impersonação e só entra em tenant por suporte',async()=>{
+ const f=fixture(),adminUser=await f.register('root'),client=await f.register('client');
+ f.exec("UPDATE users SET role='super_admin' WHERE id=?",adminUser.user.id);
+ let me=await f.request('/api/auth/me','GET',null,adminUser.cookie);
+ assert.equal(me.status,200);
+ assert.equal(me.body.user.role,'super_admin');
+ assert.equal(me.body.user.studio_id,null);
+ assert.equal(me.body.user.studio,null);
+ assert.equal(me.body.user.real_studio_id,adminUser.user.studio_id);
+ assert.equal((await f.request('/api/admin/studios','GET',null,adminUser.cookie)).status,200);
+ assert.equal((await f.request('/api/events','GET',null,adminUser.cookie)).status,400);
+
+ const enter=await f.request('/api/admin/impersonate','POST',{studio_id:client.user.studio_id},adminUser.cookie);
+ assert.equal(enter.status,200);
+ me=await f.request('/api/auth/me','GET',null,adminUser.cookie);
+ assert.equal(me.body.user.studio_id,client.user.studio_id);
+ assert.equal(me.body.user.studio.id,client.user.studio_id);
+ assert.equal(me.body.user.impersonated_studio_id,client.user.studio_id);
+
+ const leave=await f.request('/api/admin/impersonate','POST',{},adminUser.cookie);
+ assert.equal(leave.status,200);
+ me=await f.request('/api/auth/me','GET',null,adminUser.cookie);
+ assert.equal(me.body.user.studio_id,null);
+ assert.equal(me.body.user.studio,null);
+});
