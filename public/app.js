@@ -312,13 +312,24 @@ function publicError(message,e){
  const map={'Confirmações encerradas.':'RSVP is closed.','Convite inválido.':'Invalid invitation link.','Conclua a verificação de segurança.':'Complete the security check.','Verificação de segurança inválida. Tente novamente.':'Security check failed. Please try again.','Este convite não permite adicionar novas pessoas.':'This invitation does not allow adding new guests.'};
  return map[message]||message;
 }
-function mountTurnstile(form,sitekey){
+let turnstileLoader;
+function ensureTurnstile(){
+ if(globalThis.turnstile?.render)return Promise.resolve(globalThis.turnstile);
+ if(turnstileLoader)return turnstileLoader;
+ turnstileLoader=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.defer=true;
+  script.onload=()=>globalThis.turnstile?.render?resolve(globalThis.turnstile):reject(Error('Turnstile indisponível.'));
+  script.onerror=()=>reject(Error('Não foi possível carregar a verificação de segurança.'));
+  document.head.append(script);
+ });
+ return turnstileLoader;
+}
+async function mountTurnstile(form,sitekey){
  if(!sitekey||!form)return;
  const hidden=document.createElement('input');hidden.type='hidden';hidden.name='turnstile_token';form.append(hidden);
  const box=document.createElement('div');box.className='turnstile-box';form.insertBefore(box,form.querySelector('button'));
- let tries=0;
- const start=()=>{if(globalThis.turnstile?.render){form._turnstileWidget=turnstile.render(box,{sitekey,callback:value=>{hidden.value=value;},'expired-callback':()=>{hidden.value='';}});return;}if(tries++<60)setTimeout(start,100);};
- start();
+ try{await ensureTurnstile();form._turnstileWidget=turnstile.render(box,{sitekey,callback:value=>{hidden.value=value;},'expired-callback':()=>{hidden.value='';}});}
+ catch(err){box.textContent=err.message;box.classList.add('turnstile-error');}
 }
 function resetTurnstile(form){if(form?._turnstileWidget!==undefined&&globalThis.turnstile?.reset)turnstile.reset(form._turnstileWidget);}
 function eventCalendar(e){
