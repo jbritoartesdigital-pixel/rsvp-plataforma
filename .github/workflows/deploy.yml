@@ -32,7 +32,8 @@ jobs:
           pnpm exec wrangler secret list --env="" > /tmp/prod-secrets.json
           jq -e 'map(.name) | index("MP_ACCESS_TOKEN") != null' /tmp/prod-secrets.json >/dev/null
           jq -e 'map(.name) | index("MP_WEBHOOK_SECRET") != null' /tmp/prod-secrets.json >/dev/null
-          echo "Secrets Mercado Pago presentes no Worker comercial."
+          jq -e 'map(.name) | index("MAILER_TOKEN") != null' /tmp/prod-secrets.json >/dev/null
+          echo "Secrets essenciais de Mercado Pago e Resend presentes no Worker comercial."
 
       - name: Aplicar migrations no D1 comercial
         run: pnpm run db:migrate:remote
