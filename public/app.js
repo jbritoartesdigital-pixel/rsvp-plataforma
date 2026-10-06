@@ -747,7 +747,7 @@ async function eventPage(eventId){
  const workspaceAccent=safeBrandColor(a.button_color,studioBrand().color),workspaceText=safeBrandColor(a.button_text_color,'#ffffff');
  const headerNav=document.querySelector('body[data-shell="app"]>header nav');
  if(headerNav)headerNav.innerHTML=`<a class="header-event-action" href="/app">← Eventos</a><a class="header-event-action" href="${link}" target="_blank" rel="noopener">Ver RSVP</a>${e.checkin_mode!=='off'?`<a class="header-event-action header-checkin" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}`;
- const header=`<section class="event-hero libri-parity-event-hero" style="--workspace-accent:${workspaceAccent};--workspace-text:${workspaceText}"><div class="event-hero-copy"><span class="eyebrow">PAINEL DA MARCA</span><h1>${escape(e.title)}</h1><p>${e.event_date?escape(formatPublicDate(e.event_date,'pt-BR')):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''} · ${e.rsvp_mode==='list'?'Lista fechada':'Confirmação livre'}</p></div></section>
+ const header=`<section class="event-hero libri-parity-event-hero"><div class="event-hero-copy"><span class="eyebrow">PAINEL DA MARCA</span><h1>${escape(e.title)}</h1><p>${e.event_date?escape(formatPublicDate(e.event_date,'pt-BR')):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''} · ${e.rsvp_mode==='list'?'Lista fechada':'Confirmação livre'}</p></div></section>
  <nav class="event-tabs premium-event-tabs" aria-label="Áreas do evento">${tabLink('overview','Visão geral')}${tabLink('guests','Convidados')}${tabLink('messages','Mensagens')}${tabLink('appearance','Aparência')}${tabLink('settings','Configurações')}</nav>`;
  let content='';
  if(tab==='overview'){
@@ -783,6 +783,8 @@ async function eventPage(eventId){
   <div class="card section-card"><span class="eyebrow">Ferramentas</span><h2>Gerenciamento do evento</h2><div class="tool-stack">${entitlement.can_create?'<button class="secondary" id="duplicate-event">Duplicar evento</button>':'<a class="button secondary" href="/app/financeiro">Comprar plano para duplicar</a>'}<button class="secondary" id="save-template">Salvar como modelo</button><button class="secondary" id="history">Histórico</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button><button class="secondary" id="pause-event">${e.status==='active'?'Pausar confirmações':'Reativar confirmações'}</button><button class="quiet-danger" id="archive-event">Arquivar evento</button></div></div></section>`;
  }
  app.innerHTML=menu()+header+content;
+ const eventHero=document.querySelector('.libri-parity-event-hero');
+ if(eventHero){eventHero.style.setProperty('--workspace-accent',workspaceAccent);eventHero.style.setProperty('--workspace-text',workspaceText);}
  menuEvents();
  if(tab==='overview'){
   click('copy-public-overview',async()=>{await navigator.clipboard.writeText(publicUrl);notice('Link do RSVP copiado.');});
@@ -981,9 +983,12 @@ async function clientPage(raw){
   content=`<div class="card section-card"><span class="eyebrow">Configurações</span><h2>Dados do evento</h2><p class="muted">Data, local, prazo e campos adicionais.</p>${form('client-event',field('title','Nome do evento','text',e.title)+field('event_date','Data e hora','datetime-local',toLocalInput(e.event_date),false)+field('location','Local','text',e.location||'',false)+field('deadline','Prazo','datetime-local',toLocalInput(e.deadline),false)+`<div class="permission-list">${[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="extra_${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar dados')}</div>`;
  }
  document.title=`${e.title} · Painel do evento`;
- app.innerHTML=`<div class="client-shell"><section class="client-head premium-client-head" style="--workspace-accent:${safeBrandColor(a.button_color)}"><span class="eyebrow">${escape(e.studio_name||'Painel privado')}</span><h1>${escape(e.title)}</h1>${e.event_date||e.location?`<p>${e.event_date?escape(formatDate(e.event_date,true)):''}${e.event_date&&e.location?' · ':''}${e.location?escape(e.location):''}</p>`:''}</section>
+ const clientAccent=safeBrandColor(a.button_color),clientText=safeBrandColor(a.button_text_color,'#ffffff');
+ app.innerHTML=`<div class="client-shell"><section class="client-head premium-client-head"><span class="eyebrow">${escape(e.studio_name||'Painel privado')}</span><h1>${escape(e.title)}</h1>${e.event_date||e.location?`<p>${e.event_date?escape(formatDate(e.event_date,true)):''}${e.event_date&&e.location?' · ':''}${e.location?escape(e.location):''}</p>`:''}</section>
  <nav class="event-tabs client-event-tabs" aria-label="Áreas do painel">${tabLink('overview','Resumo')}${tabLink('guests','Convidados')}${permissions.view_messages?tabLink('messages','Mensagens'):''}${(permissions.manage_appearance||permissions.manage_texts)?tabLink('appearance','Personalização'):''}${permissions.manage_event_details?tabLink('settings','Configurações'):''}</nav>
  ${content}</div>`;
+ const clientHero=document.querySelector('.premium-client-head');
+ if(clientHero){clientHero.style.setProperty('--workspace-accent',clientAccent);clientHero.style.setProperty('--workspace-text',clientText);}
 
  if(tab==='guests'){
   let clientFilter='';
