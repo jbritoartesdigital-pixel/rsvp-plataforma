@@ -623,7 +623,7 @@ function freeRsvp(e,endpoint,guest=null){
     </div>
     <input type="hidden" name="has_companion" value="">
     <div id="companion-section" class="companion-section" hidden>
-      <div class="companion-section-head"><div><strong>${ptr(e,'Quem vai com você?','Who is coming with you?')}</strong><span>${ptr(e,'Adicione uma pessoa por campo.','Add one person per field.')}</span></div><b id="companion-count">0/${Math.max(0,limit-1)}</b></div>
+      <div class="companion-section-head"><div><strong>${ptr(e,'Quem vai com você?','Who is coming with you?')}</strong><span>${ptr(e,'Adicione uma pessoa por campo.','Add one person per field.')}</span></div></div>
       <div id="free-members" class="free-members"></div>
       <div class="companion-actions">
         <button type="button" class="secondary small" id="add-adult">${ptr(e,'+ Adulto','+ Adult')}</button>
