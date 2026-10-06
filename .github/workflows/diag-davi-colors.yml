@@ -36,7 +36,11 @@ jobs:
           set -euo pipefail
           echo "HEAD app.js:"
           curl -fSsI https://app.presencaconfirmada.com.br/vendor/app.js | grep -Ei '^(cache-control|etag|last-modified|cf-cache-status):' || true
-          echo "Bundle contém workspaceText?"
-          curl -fSsL https://app.presencaconfirmada.com.br/vendor/app.js | grep -q -- '--workspace-text' && echo yes || echo no
-          echo "CSS contém V3.2.1?"
-          curl -fSsL https://app.presencaconfirmada.com.br/styles.css | grep -q 'V3.2.1' && echo yes || echo no
+          echo "Comparando bundle servido com build atual..."
+          pnpm run build >/dev/null
+          curl -fSsL https://app.presencaconfirmada.com.br/vendor/app.js -o /tmp/prod-app.js
+          sha256sum public/vendor/app.js /tmp/prod-app.js
+          cmp -s public/vendor/app.js /tmp/prod-app.js && echo "bundle_match=yes" || echo "bundle_match=no"
+          grep -F -- '--workspace-text' /tmp/prod-app.js >/dev/null && echo "workspace_text=yes" || echo "workspace_text=no"
+          curl -fSsL https://app.presencaconfirmada.com.br/styles.css -o /tmp/prod-styles.css
+          grep -F 'V3.2.1' /tmp/prod-styles.css >/dev/null && echo "css_v321=yes" || echo "css_v321=no"
