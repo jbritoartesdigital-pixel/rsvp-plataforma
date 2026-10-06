@@ -612,13 +612,32 @@ async function dashboard(){
  menuEvents();if(entitlement.can_create)click('import-json',()=>openJsonImport());document.querySelectorAll('[data-restore-event]').forEach(btn=>btn.onclick=async()=>{await api(`/api/events/${btn.dataset.restoreEvent}/restore`,'POST',{});await dashboard();});
 }
 async function newEvent(){
- const {entitlement}=await api('/api/events/entitlement');
+ const [{entitlement},{templates}]=await Promise.all([api('/api/events/entitlement'),api('/api/templates')]);
  if(!entitlement.can_create){
-  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Libere a criação de eventos</h1><p>${escape(entitlement.reason)}</p></section><div class="card entitlement-paywall"><div class="paywall-mark">1</div><h2>Cada novo evento precisa estar coberto pelo seu plano</h2><p>Com créditos, 1 evento consome 1 crédito. Na mensalidade, você cria eventos enquanto ela estiver vigente.</p><a class="button primary full-button" href="/app/financeiro">Ir para planos e pagamentos</a><a class="button ghost full-button" href="/app">Voltar aos eventos</a></div>`;
+  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Libere a criação de eventos</h1><p>${escape(entitlement.reason)}</p></section><div class="card entitlement-paywall"><div class="paywall-mark">1</div><h2>Cada novo evento precisa estar coberto pelo seu plano</h2><p>Com créditos, 1 evento consome 1 crédito. Na mensalidade, você cria eventos enquanto ela estiver vigente.</p><a class="button primary full-button" href="/app/financeiro">Ir para planos e pagamentos</a><a class="button ghost full-button" href="/app/modelos">Ver meus modelos</a><a class="button ghost full-button" href="/app">Voltar aos eventos</a></div>`;
   menuEvents();return;
  }
- app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>${entitlement.mode==='credits'?`Este evento usará 1 dos seus ${entitlement.credits} crédito(s).`:'Sua mensalidade está vigente e cobre este novo evento.'}</p></section><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
- menuEvents();bindAutoSlug('title','slug','event-url-preview');bindRsvpModeSettings(document.querySelector('#event'));const hostPreview=document.querySelector('#studio-host-preview');if(hostPreview)hostPreview.textContent=new URL(tenantOrigin(user.studio.slug)).hostname;submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
+ let templatesHtml='';
+ if(templates.length){
+  const quick=templates.slice(0,6).map(t=>{
+   const check={off:'sem QR',family:'QR família',individual:'QR individual'}[t.config?.checkin_mode||'off'];
+   return `<button class="template-quick-card" data-new-template="${t.id}"><span>MODELO</span><strong>${escape(t.name)}</strong><small>${t.config?.rsvp_mode==='list'?'Lista':'Livre'} · ${escape(check)}</small></button>`;
+  }).join('');
+  templatesHtml=`<section class="new-event-templates"><div class="section-title"><div><span class="eyebrow">Começar mais rápido</span><h2>Usar um modelo</h2></div><a class="text-action" href="/app/modelos">Gerenciar modelos</a></div><div class="template-quick-grid">${quick}</div></section>`;
+ }
+ app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>${entitlement.mode==='credits'?`Este evento usará 1 dos seus ${entitlement.credits} crédito(s).`:'Sua mensalidade está vigente e cobre este novo evento.'}</p></section>${templatesHtml}<div class="section-divider"><span>ou comece do zero</span></div><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
+ menuEvents();
+ document.querySelectorAll('[data-new-template]').forEach(btn=>btn.onclick=()=>openUseTemplate(templates.find(t=>t.id===btn.dataset.newTemplate)));
+ bindAutoSlug('title','slug','event-url-preview');
+ bindRsvpModeSettings(document.querySelector('#event'));
+ const hostPreview=document.querySelector('#studio-host-preview');
+ if(hostPreview)hostPreview.textContent=new URL(tenantOrigin(user.studio.slug)).hostname;
+ submit('event',async b=>{
+  b.event_date=localToIso(b.event_date);
+  b.deadline=localToIso(b.deadline);
+  const {event}=await api('/api/events','POST',b);
+  goto(`/app/eventos/${event.id}`);
+ });
 }
 function guestQrEntries(g){
  if(g.qr_token)return [{name:g.group_label||g.name,token:g.qr_token}];
