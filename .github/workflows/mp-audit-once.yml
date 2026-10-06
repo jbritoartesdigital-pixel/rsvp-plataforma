@@ -1,0 +1,35 @@
+name: Auditar Mercado Pago produção
+
+on:
+  push:
+    branches: [main]
+    paths: [docs/MP_AUDIT_NOW]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: commercial
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar credenciais Mercado Pago sem expor segredos
+        env:
+          MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
+          MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "${MP_ACCESS_TOKEN:-}"
+          test -n "${MP_WEBHOOK_SECRET:-}"
+
+          code="$(curl -sS -o /tmp/me.json -w '%{http_code}'             -H "Authorization: Bearer $MP_ACCESS_TOKEN"             https://api.mercadopago.com/users/me)"
+          echo "users_me_http=$code"
+          test "$code" = "200"
+
+          expected="1233502406736491"
+          actual="$(jq -r '.id // empty' /tmp/me.json)"
+          nickname="$(jq -r '.nickname // empty' /tmp/me.json)"
+          if [ "$actual" = "$expected" ]; then echo "collector_match=true"; else echo "collector_match=false"; fi
+          if printf '%s' "$nickname" | grep -qi '^TEST'; then echo "looks_like_test_user=true"; else echo "looks_like_test_user=false"; fi
+          echo "webhook_secret_present=true"
