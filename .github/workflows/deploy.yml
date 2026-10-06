@@ -1,5 +1,8 @@
 name: Publicar plataforma comercial
 on:
+  push:
+    branches: [main]
+    paths: [docs/DEPLOY_PROD_NOW]
   workflow_dispatch:
 permissions:
   contents: read
