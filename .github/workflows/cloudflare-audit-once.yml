@@ -1,6 +1,9 @@
-name: Auditar DNS HML
+name: Verificar token Cloudflare HML
 
 on:
+  push:
+    branches: [main]
+    paths: [docs/CLOUDFLARE_PERMISSIONS_AUDIT_NOW]
   workflow_dispatch:
 
 permissions:
@@ -9,18 +12,26 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    environment: commercial
     steps:
       - uses: actions/checkout@v4
-      - name: Consultar resolução pública do namespace HML
+      - name: Auditar permissões Cloudflare sem alterações
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -euo pipefail
-          random_host="slug-audit-$(date -u +%Y%m%d%H%M%S).hml.presencaconfirmada.com.br"
-          hml_a="$(dig +short hml.presencaconfirmada.com.br A | paste -sd, -)"
-          hml_aaaa="$(dig +short hml.presencaconfirmada.com.br AAAA | paste -sd, -)"
-          tenant_a="$(dig +short "$random_host" A | paste -sd, -)"
-          tenant_aaaa="$(dig +short "$random_host" AAAA | paste -sd, -)"
-          hml_code="$(curl -L -sS -o /tmp/hml.html -w '%{http_code}' --max-time 15 https://hml.presencaconfirmada.com.br/ || true)"
-          tenant_code="$(curl -L -sS -o /tmp/tenant.html -w '%{http_code}' --max-time 15 "https://$random_host/" || true)"
-          printf 'HML root: A=%s AAAA=%s HTTP=%s\n' "$hml_a" "$hml_aaaa" "$hml_code"
-          printf 'HML tenant: host=%s A=%s AAAA=%s HTTP=%s\n' "$random_host" "$tenant_a" "$tenant_aaaa" "$tenant_code"
-          test -n "$hml_a$hml_aaaa"
+          set -u
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+          zone_id="682ae38c7ae33e59b117fef7355b5c1f"
+
+          zones_code="$(curl -sS -o /tmp/zones.json -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=presencaconfirmada.com.br")"
+          dns_code="$(curl -sS -o /tmp/dns.json -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=%2A.hml.presencaconfirmada.com.br")"
+          routes_code="$(curl -sS -o /tmp/routes.json -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          scripts_code="$(curl -sS -o /tmp/scripts.json -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")"
+
+          echo "zone_read_http=$zones_code"
+          echo "dns_http=$dns_code"
+          echo "workers_routes_http=$routes_code"
+          echo "workers_scripts_http=$scripts_code"
+
+          test "$zones_code" = "200"

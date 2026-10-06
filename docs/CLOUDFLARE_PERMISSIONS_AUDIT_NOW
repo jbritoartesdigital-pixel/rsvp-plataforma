@@ -1,2 +1,2 @@
-audit all Cloudflare permissions after secret update
-source_head=50a8b982275cc7f4b9ce0703f2c9a279c0929c5b
+retest commercial Cloudflare secret
+source_head=60f84753ed4516730eb99093465ae07e0331cdb0
