@@ -1100,3 +1100,89 @@ body.modal-open{overflow:hidden}
 @media(max-width:719px){
  .admin-tabs{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
+
+/* Event workspace tabs and Libri-style guided RSVP */
+.event-tabs{
+ display:flex;gap:6px;overflow:auto;margin:0 0 18px;padding:5px;
+ border:1px solid var(--line);border-radius:14px;background:#fffaf9;scrollbar-width:none
+}
+.event-tabs::-webkit-scrollbar{display:none}
+.event-tabs a{
+ flex:0 0 auto;padding:10px 13px;border-radius:10px;color:#755c61;
+ font-size:11px;font-weight:800;text-decoration:none;white-space:nowrap
+}
+.event-tabs a.active{background:#f1e5e5;color:#6f484e}
+.event-link-grid,.overview-info-grid,.settings-workspace{display:grid;gap:12px}
+.event-link-card{
+ display:grid;gap:12px;padding:18px;border:1px solid var(--line);border-radius:17px;background:#fff
+}
+.event-link-card h2{margin:2px 0 4px}
+.event-link-card p{margin:0;color:var(--muted);font-size:11px;line-height:1.5}
+.client-link-card{border-color:#e4c9cc;background:#fffafa}
+.link-code{
+ padding:10px 11px;border:1px dashed #dbc8cb;border-radius:11px;background:#fbf7f6;
+ color:#654f54;font:10px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere
+}
+.event-link-actions{display:flex;gap:7px;flex-wrap:wrap}
+.appearance-workspace{display:grid;gap:14px}
+.appearance-controls-stack{display:grid;gap:12px;min-width:0}
+.appearance-sticky-preview{
+ min-width:0;padding:16px;border:1px solid var(--line);border-radius:17px;background:#fff;
+ align-self:start
+}
+.appearance-sticky-preview h3{margin:4px 0 12px}
+.appearance-editor-sections{display:grid;gap:12px}
+.appearance-group{
+ padding:13px;border:1px solid #eadfe0;border-radius:13px;background:#fffdfc
+}
+.appearance-group-head{display:flex;gap:9px;align-items:flex-start;margin-bottom:11px}
+.appearance-group-head>span{
+ display:grid;place-items:center;flex:0 0 27px;width:27px;height:27px;border-radius:50%;
+ background:#f2e6e6;color:#80575d;font-size:9px;font-weight:900
+}
+.appearance-group-head strong,.appearance-group-head small{display:block}
+.appearance-group-head strong{font-size:12px}
+.appearance-group-head small{margin-top:2px;color:var(--muted);font-size:9px;line-height:1.4}
+.rsvp-question,.rsvp-companion-gate{display:grid;gap:9px;margin:14px 0}
+.rsvp-choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rsvp-choice-grid button{
+ min-height:45px;border:1px solid #dcc9cc;background:#fff;color:#6d5056
+}
+.rsvp-choice-grid button.active{
+ border-color:#a96f74;background:#f1e3e4;color:#6f454a;box-shadow:inset 0 0 0 1px #a96f74
+}
+.rsvp-individual-note{
+ display:grid;gap:3px;margin:12px 0;padding:11px 12px;border:1px solid #eadbdd;
+ border-radius:11px;background:#fff9f8
+}
+.rsvp-individual-note strong{font-size:11px}
+.rsvp-individual-note span{color:var(--muted);font-size:10px}
+.companion-section{
+ margin-top:5px;padding:12px;border:1px solid #eadfe0;border-radius:12px;background:#fffdfc
+}
+.companion-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:9px}
+.companion-section-head strong,.companion-section-head span{display:block}
+.companion-section-head strong{font-size:11px}
+.companion-section-head span{margin-top:2px;color:var(--muted);font-size:9px}
+.companion-section-head b{font-size:10px;color:#81595e}
+.free-members{display:grid;gap:8px}
+.companion-row{margin:0}
+.companion-input-row{display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:6px}
+.companion-input-row input{margin:0}
+.companion-remove{min-width:40px;padding:0;font-size:20px;background:#fff;border:1px solid #e5d6d8;color:#8e6268}
+.companion-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}
+
+@media(min-width:900px){
+ .event-link-grid,.overview-info-grid{grid-template-columns:1fr 1fr}
+ .appearance-workspace{grid-template-columns:minmax(0,1.5fr) minmax(300px,.62fr);align-items:start}
+ .appearance-sticky-preview{position:sticky;top:18px}
+ .settings-workspace{grid-template-columns:1fr 1fr;align-items:start}
+}
+@media(max-width:719px){
+ .event-tabs{margin-left:-2px;margin-right:-2px}
+ .event-tabs a{padding:10px 11px;font-size:10px}
+ .event-link-actions{display:grid;grid-template-columns:1fr}
+ .event-link-actions>*{width:100%;text-align:center}
+ .rsvp-choice-grid,.companion-actions{grid-template-columns:1fr}
+ .appearance-sticky-preview{order:-1}
+}
