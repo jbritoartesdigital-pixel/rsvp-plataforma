@@ -45,8 +45,9 @@ try{
  await page.locator('header .logo').click();await page.waitForURL('**/app');await page.getByRole('heading',{name:/Seus eventos/}).waitFor();
  await page.goto(f.env.APP_ORIGIN+'/');await page.waitForURL('**/app');await page.getByRole('heading',{name:/Seus eventos/}).waitFor();
  await page.goto(f.env.APP_ORIGIN+'/app/login');await page.waitForURL('**/app');await page.getByRole('heading',{name:/Seus eventos/}).waitFor();
- await page.setViewportSize({width:390,height:844});await page.goto(f.env.APP_ORIGIN+'/');await page.getByRole('heading',{name:/Confirmação de presença sem planilha/}).waitFor();await page.screenshot({path:'../plataforma-mobile.png',fullPage:true});
- assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.goto(f.env.APP_ORIGIN+'/app/marca');await page.getByRole('heading',{name:'Minha marca'}).waitFor();await page.goBack();await page.waitForURL('**/app');await page.getByRole('heading',{name:/Seus eventos/}).waitFor();
+ const publicContext=await browser.newContext({viewport:{width:390,height:844}}),publicPage=await publicContext.newPage();await publicPage.goto(f.env.APP_ORIGIN+'/');await publicPage.getByRole('heading',{name:/Confirmação de presença sem planilha/}).waitFor();await publicPage.screenshot({path:'../plataforma-mobile.png',fullPage:true});assert.equal(await publicPage.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await publicContext.close();
+ await page.setViewportSize({width:390,height:844});
  await page.goto(clientURL+'?tab=guests');await page.getByRole('heading',{name:'Convidados',exact:true}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.ok(await page.locator('.client-guest-card').count()>=1);await page.goto(clientURL+'?tab=messages');await page.getByRole('heading',{name:'Mensagens',exact:true}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await page.goto(clientURL+'?tab=appearance');await page.getByRole('heading',{name:'Aparência do RSVP'}).waitFor();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.equal(await page.getByRole('heading',{name:'Lista de convidados'}).count(),0);
  assert.deepEqual(errors,[]);
