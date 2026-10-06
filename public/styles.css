@@ -2523,3 +2523,18 @@ body[data-shell="app"]>header .header-logout{cursor:pointer}
   padding-top:0;
  }
 }
+
+
+/* CSP-safe dynamic theming for event and client headers */
+.premium-client-head{
+ background:linear-gradient(135deg,var(--workspace-accent,var(--studio-accent)),color-mix(in srgb,var(--workspace-accent,var(--studio-accent)),white 34%))!important;
+}
+.premium-client-head .eyebrow{
+ color:color-mix(in srgb,var(--workspace-text,#fff),transparent 12%)!important;
+}
+.premium-client-head h1{
+ color:var(--workspace-text,#fff)!important;
+}
+.premium-client-head p{
+ color:color-mix(in srgb,var(--workspace-text,#fff),transparent 12%)!important;
+}
