@@ -1,6 +1,11 @@
 name: Publicar plataforma comercial
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy.yml'
 permissions:
   contents: read
 concurrency:
@@ -8,6 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'deploy: production v3 once'
     runs-on: ubuntu-latest
     environment: commercial
     steps:
