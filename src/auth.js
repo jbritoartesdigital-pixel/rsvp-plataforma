@@ -13,11 +13,12 @@ export async function passwordHash(password,salt=token()) {
  return `${salt}.${b64(new Uint8Array(bits))}`;
 }
 export async function passwordOK(password,stored) { try { return await passwordHash(String(password),stored.split('.')[0])===stored; } catch { return false; } }
-export const cookie = value => `rsvp_session=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800`;
+const SESSION_DAYS=30;
+export const cookie = value => `rsvp_session=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS*86400}`;
 export async function newSession(env,user) {
  if(await one(env,'SELECT user_id FROM user_revocations WHERE user_id=?',user)) fail(403,'Acesso à equipe revogado.');
  await run(env,'DELETE FROM sessions WHERE expires_at<?',now());
- const raw=token(); await run(env,'INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)',await hash(raw),user,new Date(Date.now()+7*86400000).toISOString());
+ const raw=token(); await run(env,'INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)',await hash(raw),user,new Date(Date.now()+SESSION_DAYS*86400000).toISOString());
  return {'set-cookie':cookie(raw)};
 }
 export async function session(request,env) {

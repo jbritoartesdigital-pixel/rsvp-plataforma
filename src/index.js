@@ -36,6 +36,12 @@ export default {
     const record=await one(env,"SELECT m.* FROM event_media m JOIN events e ON e.id=m.event_id JOIN studios s ON s.id=m.studio_id WHERE m.id=? AND m.deleted_at IS NULL AND e.status IN ('active','inactive') AND s.status='active'",path.slice(7));
     if(!record) fail(404,'Mídia indisponível.'); const object=await env.MEDIA.get(record.object_key); if(!object) fail(404,'Mídia indisponível.');
     response=new Response(object.body,{headers:{'content-type':record.mime_type,'cache-control':'public, max-age=300','etag':object.httpEtag||''}});
+   } else if(path.startsWith('/brand-media/')) {
+    const studioId=path.slice('/brand-media/'.length),studio=await one(env,"SELECT id,status,brand FROM studios WHERE id=?",studioId);
+    if(!studio||studio.status!=='active')fail(404,'Logo indisponível.');
+    const brand=JSON.parse(studio.brand||'{}');if(!String(brand.logo_url||'').startsWith(`/brand-media/${studioId}`))fail(404,'Logo indisponível.');
+    const object=await env.MEDIA.get(`studios/${studioId}/brand-logo`);if(!object)fail(404,'Logo indisponível.');
+    const h=new Headers();object.writeHttpMetadata?.(h);h.set('cache-control','public, max-age=3600');if(object.httpEtag)h.set('etag',object.httpEtag);response=new Response(object.body,{headers:h});
    } else response=await env.ASSETS.fetch(request);
   } catch(error) {
    if(error instanceof HttpError) response=json({error:error.message},error.status);

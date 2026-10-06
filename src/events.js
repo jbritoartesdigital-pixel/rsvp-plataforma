@@ -557,12 +557,34 @@ export async function eventsRoutes(request,env,path,url) {
   }
  }
 
+ if(path==='/api/brand/logo'){
+  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');owner(u);
+  const current=parseObject(u.studio.brand);
+  if(method==='POST'){
+   const mime=String(request.headers.get('content-type')||'').split(';')[0].toLowerCase();
+   if(!['image/png','image/jpeg','image/webp','image/avif'].includes(mime))fail(400,'Envie uma imagem PNG, JPG, WEBP ou AVIF.');
+   const bytes=await request.arrayBuffer();if(!bytes.byteLength||bytes.byteLength>5*1024*1024)fail(400,'A logo deve ter no máximo 5 MB.');
+   const objectKey=`studios/${u.studio_id}/brand-logo`;
+   await env.MEDIA.put(objectKey,bytes,{httpMetadata:{contentType:mime}});
+   const logo_url=`/brand-media/${u.studio_id}?v=${Date.now()}`;
+   await run(env,'UPDATE studios SET brand=? WHERE id=?',safeObject({...current,logo_url}),u.studio_id);
+   await audit(env,u.studio_id,u.id,'brand_logo_updated');
+   return json({ok:true,logo_url},201);
+  }
+  if(method==='DELETE'){
+   await env.MEDIA.delete(`studios/${u.studio_id}/brand-logo`);
+   const next={...current};delete next.logo_url;
+   await run(env,'UPDATE studios SET brand=? WHERE id=?',safeObject(next),u.studio_id);
+   await audit(env,u.studio_id,u.id,'brand_logo_removed');return json({ok:true});
+  }
+  fail(405,'Método não permitido.');
+ }
  if(path==='/api/brand'){
   const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
   if(method==='GET')return json({studio:u.studio});
   if(method==='PATCH'){
-   owner(u);const b=await body(request);
-   await run(env,'UPDATE studios SET name=?,whatsapp=?,brand=? WHERE id=?',text(b.name??u.studio.name),text(b.whatsapp??u.studio.whatsapp,40),safeObject(b.brand||{}),u.studio_id);
+   owner(u);const b=await body(request),nextBrand={...parseObject(u.studio.brand),...parseObject(b.brand)};
+   await run(env,'UPDATE studios SET name=?,whatsapp=?,brand=? WHERE id=?',text(b.name??u.studio.name),text(b.whatsapp??u.studio.whatsapp,40),safeObject(nextBrand),u.studio_id);
    await audit(env,u.studio_id,u.id,'brand_updated');return json({ok:true});
   }
  }
