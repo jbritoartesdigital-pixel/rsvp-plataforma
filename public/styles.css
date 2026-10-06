@@ -1943,3 +1943,36 @@ body[data-shell="app"] .button.secondary{
  .event-link-actions{display:grid;grid-template-columns:1fr 1fr}
  .event-link-actions>*{width:100%}
 }
+
+
+/* V3.1 mobile client containment: internal scrollers must never widen the page */
+.client-shell,.client-guests-section,.client-guest-list,.client-guest-card,
+.client-guest-actions,.client-guest-toolbar,.client-appearance-workspace{
+ min-width:0;
+ max-width:100%;
+}
+.client-event-tabs{max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
+.client-guest-toolbar{width:100%;overflow:hidden}
+.client-guest-toolbar .filter-chips{
+ width:100%;
+ max-width:100%;
+ min-width:0;
+ overflow-x:auto;
+ overscroll-behavior-inline:contain;
+}
+.client-guest-card .guest-card-head,
+.client-guest-card .guest-card-footer,
+.client-guest-card .guest-card-members{min-width:0;max-width:100%}
+.client-guest-card .guest-card-head>div{min-width:0}
+.client-guest-card .guest-card-name,
+.client-guest-card .guest-card-group,
+.client-guest-card .guest-card-contact{max-width:100%;overflow-wrap:anywhere}
+@media(max-width:719px){
+ .client-shell{width:100%;overflow-x:hidden}
+ .client-event-tabs{margin-left:0;margin-right:0}
+ .client-guest-actions .row{min-width:0;max-width:100%;gap:7px}
+ .client-guest-actions .row>*{min-width:0;max-width:100%;white-space:normal}
+ .client-guest-toolbar>input{width:100%;min-width:0}
+ .client-guest-card{width:100%;overflow:hidden}
+ .client-guest-card .guest-card-footer{width:100%}
+}
