@@ -70,7 +70,7 @@
           "custom_domain": true
         },
         {
-          "pattern": "*.presencaconfirmada.com.br/*",
+          "pattern": "*.hml.presencaconfirmada.com.br/*",
           "zone_name": "presencaconfirmada.com.br"
         }
       ]
