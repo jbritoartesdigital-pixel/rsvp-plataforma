@@ -251,7 +251,7 @@ const menu=()=>{
  const item=(href,label,active)=>`<a class="${active?'active':''}" href="${href}">${label}</a>`;
  const pureAdmin=user?.role==='super_admin'&&!user?.impersonated_studio_id;
  if(pureAdmin)return `<div class="app-nav-wrap admin-nav-wrap"><nav class="app-tabs admin-tabs" aria-label="Navegação administrativa">${item('/admin','Admin',p==='/admin')}${item('/admin/conta','Meu acesso',p==='/admin/conta')}</nav></div>`;
- const eventWorkspace=/^\\/app\\/eventos\\/[^/]+$/.test(p)&&p!=='/app/eventos/novo';
+ const eventWorkspace=/^\/app\/eventos\/[^/]+$/.test(p)&&p!=='/app/eventos/novo';
  if(eventWorkspace)return user?.impersonated_studio_id?`<div class="impersonation"><div><strong>Modo suporte</strong><span>Você está acessando a conta ${escape(user.studio?.name||'selecionada')} como Super Admin.</span></div><button id="stop-impersonation">Voltar ao Admin</button></div>`:'';
  return `<div class="app-nav-wrap"><nav class="app-tabs" aria-label="Navegação da plataforma">
   ${item('/app','Eventos',p==='/app'||p.startsWith('/app/eventos'))}
