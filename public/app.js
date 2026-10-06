@@ -434,10 +434,17 @@ function guestInternalEditor(e,g,endpoint,done,mode='internal'){
  submit('family-editor',async b=>{b.max_adults_allowed=b.max_adults_allowed===''?null:Number(b.max_adults_allowed);b.max_children_allowed=b.max_children_allowed===''?null:Number(b.max_children_allowed);const parsed=parseMemberLines(b.members);b.members=parsed.map(m=>{const prior=members.find(x=>normalizedName(x.name)===normalizedName(m.name));return {...m,...(prior?{id:prior.id,is_preapproved:prior.is_preapproved}:{})};});if(!b.members.length)b.members=[{name:b.name,person_type:'adult',attendance_status:b.response_status}];if(g)await api(endpoint,'PATCH',b);else await api(endpoint,'POST',b);modal.closeModal();await done();});
 }
 function eventSettingsFields(e={}){
- const basics=field('title','Nome do evento','text',e.title||'')+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location||'',false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
- const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],e.rsvp_mode||'free')+select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],e.list_behavior||'strict')+field('max_people','Limite máximo por convite','number',e.max_people||10)+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
+ const mode=e.rsvp_mode||'free',basics=field('title','Nome do evento','text',e.title||'')+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location||'',false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
+ const listRules=`<div class="list-only-settings" ${mode==='list'?'':'hidden'}>${select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],e.list_behavior||'strict')}${field('max_people','Limite padrão por família','number',mode==='free'?100:(e.max_people||10))}</div>`;
+ const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],mode)+listRules+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
  if(e.id)return basics+options+select('status','Situação',[['active','Ativo'],['inactive','Pausado'],['archived','Arquivado']],e.status);
  return basics+`<label><span class="field-label">Endereço do evento<b class="required-mark">*</b></span><input name="slug" required autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: …/<strong id="event-url-preview">seu-evento</strong></small></label><details class="advanced-options"><summary>Opções do RSVP e check-in</summary><div class="advanced-body">${options}</div></details>`;
+}
+function bindRsvpModeSettings(formEl){
+ if(!formEl)return;
+ const mode=formEl.querySelector('[name="rsvp_mode"]'),listBox=formEl.querySelector('.list-only-settings'),limit=formEl.querySelector('[name="max_people"]');
+ const sync=()=>{const isList=mode?.value==='list';if(listBox)listBox.hidden=!isList;if(limit){if(!isList)limit.value='100';else if(Number(limit.value)>=100)limit.value='10';}};
+ mode?.addEventListener('change',sync);sync();
 }
 async function dashboard(){
  if(!user.studio){goto('/admin');return;}
@@ -456,7 +463,7 @@ async function newEvent(){
   menuEvents();return;
  }
  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>${entitlement.mode==='credits'?`Este evento usará 1 dos seus ${entitlement.credits} crédito(s).`:'Sua mensalidade está vigente e cobre este novo evento.'}</p></section><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
- menuEvents();bindAutoSlug('title','slug','event-url-preview');submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
+ menuEvents();bindAutoSlug('title','slug','event-url-preview');bindRsvpModeSettings(document.querySelector('#event'));submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
 }
 function guestRowHtml(e,g,link){
  const people=g.members.filter(m=>m.attendance_status==='yes'),adults=people.filter(m=>m.person_type==='adult').length,children=people.filter(m=>m.person_type==='child').length;
@@ -570,6 +577,7 @@ async function eventPage(eventId){
   document.querySelectorAll('[data-delete-media]').forEach(btn=>btn.onclick=async()=>{if(document.querySelector('#appearance-save-state')?.classList.contains('dirty')){notice('Salve a aparência antes de remover uma mídia.');return;}if(!confirm('Remover esta mídia?'))return;await api(`${base}/media/${btn.dataset.deleteMedia}`,'DELETE');await eventPage(eventId);});
  }
  if(tab==='settings'){
+  bindRsvpModeSettings(document.querySelector('#settings'));
   submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');await eventPage(eventId);});
   submit('extra-fields',async(_,formEl)=>{const fd=new FormData(formEl);await api(base,'PATCH',{extra_fields:Object.fromEntries(['phone','dietary','notes','message'].map(k=>[k,fd.has(k)]))});notice('Campos atualizados.');});
   submit('client-permissions',async(_,formEl)=>{const fd=new FormData(formEl),body={view:true};for(const k of Object.keys(DEFAULT_CLIENT_PERMISSIONS))if(k!=='view')body[k]=fd.has(k);await api(base,'PATCH',{client_permissions:body});notice('Permissões da cliente salvas.');});
