@@ -3,6 +3,16 @@ import {authRoutes} from './auth.js';
 import {billingRoutes} from './billing.js';
 import {eventsRoutes} from './events.js';
 import {adminRoutes} from './admin.js';
+const tenantMutationOrigin=(origin,path,env)=>{
+ if(origin===env.APP_ORIGIN)return true;
+ if(!/^\/api\/(public|cliente)\//.test(path))return false;
+ try{
+  const u=new URL(origin),suffix='.presencaconfirmada.com.br';
+  if(u.protocol!=='https:'||!u.hostname.endsWith(suffix))return false;
+  const sub=u.hostname.slice(0,-suffix.length);
+  return !!sub&&!['app','hml','www'].includes(sub)&&!sub.includes('.');
+ }catch{return false;}
+};
 const security={
  'x-content-type-options':'nosniff','referrer-policy':'no-referrer',
  'permissions-policy':'camera=(self), publickey-credentials-get=(self)',
@@ -15,7 +25,7 @@ export default {
    const url=new URL(request.url),path=url.pathname;
    // Apply Origin protection to every browser mutation, including public RSVP and passkey ceremonies.
    if(!['GET','HEAD'].includes(request.method) && path!=='/api/webhooks/mercadopago') {
-    if(request.headers.get('origin')!==env.APP_ORIGIN) fail(403,'Origem inválida.');
+    if(!tenantMutationOrigin(request.headers.get('origin'),path,env)) fail(403,'Origem inválida.');
    }
    if(path.startsWith('/api/')) {
     response=await authRoutes(request,env,path)||await billingRoutes(request,env,path,url)||await eventsRoutes(request,env,path,url)||await adminRoutes(request,env,path)||json({error:'Rota não encontrada.'},404);
