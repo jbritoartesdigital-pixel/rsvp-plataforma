@@ -95,10 +95,10 @@ test('saúde administrativa não expõe secrets e diferencia configuração de i
  f.exec("UPDATE users SET role='super_admin' WHERE id=?",adminUser.user.id);
  f.env.MAILER_URL='https://api.resend.com/emails';f.env.MAILER_TOKEN='mailer-super-secret';f.env.MAILER_FROM='Presença Confirmada <acesso@presencaconfirmada.com.br>';
  f.resources.set('/users/me',{id:123});
- f.env.HEALTH_FETCH=async()=>new Response('{}',{status:200,headers:{'content-type':'application/json'}});
  const stamp=new Date().toISOString();
  f.exec("INSERT INTO integration_events(id,studio_id,provider,kind,external_id,status,message,details,source_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",'mail-ok',client.user.studio_id,'resend','password_reset','x','ok','E-mail enviado.','{}','mail-ok',stamp);
  f.exec("INSERT INTO integration_events(id,studio_id,provider,kind,external_id,status,message,details,source_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",'mp-ok',client.user.studio_id,'mercadopago','payment','1','ok','Webhook válido processado.','{}','mp-ok',stamp);
+ f.exec("INSERT INTO integration_events(id,studio_id,provider,kind,external_id,status,message,details,source_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",'wild-ok',null,'platform','wildcard_smoke',null,'ok','Wildcard validado externamente no último deploy.','{}','wild-ok',stamp);
  const health=await f.request('/api/admin/health','GET',null,adminUser.cookie);
  assert.equal(health.status,200);
  const text=JSON.stringify(health.body);assert.equal(text.includes('mailer-super-secret'),false);assert.equal(text.includes('test-secret'),false);assert.equal(text.includes('test-only'),false);
@@ -106,6 +106,22 @@ test('saúde administrativa não expõe secrets e diferencia configuração de i
  assert.ok(health.body.services.some(x=>x.key==='r2'&&x.state==='operational'));
  assert.ok(health.body.services.some(x=>x.key==='resend'&&x.state==='operational'));
  assert.ok(health.body.services.some(x=>x.key==='mp_webhooks'&&x.state==='operational'));
+ assert.ok(health.body.services.some(x=>x.key==='domain'&&x.state==='operational'));
+ assert.ok(health.body.services.some(x=>x.key==='wildcard'&&x.state==='operational'));
+});
+
+test('saúde não cria alerta de webhook antes do primeiro pagamento real',async()=>{
+ const f=fixture(),adminUser=await f.register('admin'),client=await f.register('cliente');
+ f.exec("UPDATE users SET role='super_admin' WHERE id=?",adminUser.user.id);
+ f.resources.set('/users/me',{id:123});
+ const stamp=new Date().toISOString();
+ f.exec("INSERT INTO integration_events(id,studio_id,provider,kind,external_id,status,message,details,source_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",'wild-first',null,'platform','wildcard_smoke',null,'ok','Wildcard validado externamente no último deploy.','{}','wild-first',stamp);
+ const health=await f.request('/api/admin/health','GET',null,adminUser.cookie);
+ assert.equal(health.status,200);
+ const webhook=health.body.services.find(x=>x.key==='mp_webhooks');
+ assert.equal(webhook.state,'operational');
+ assert.match(webhook.message,/ainda não houve pagamento real/i);
+ assert.equal(f.sql('SELECT COUNT(*) n FROM payments').n,0);
 });
 
 test('Resend registra sucesso sem persistir token ou link de recuperação',async()=>{
