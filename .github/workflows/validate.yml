@@ -1,9 +1,6 @@
 name: Validar plataforma sem publicar
 
 on:
-  push:
-    branches: [main]
-    paths: [docs/VALIDATE_NAV_NOW]
   workflow_dispatch:
 
 permissions:
