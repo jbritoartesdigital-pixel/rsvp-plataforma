@@ -60,7 +60,7 @@ export async function tenantEvent(env,user,eventId) {
 function publicEvent(e,env={}) {
  return {
   id:e.id,title:e.title,event_date:e.event_date,location:e.location,deadline:e.deadline,status:e.status,
-  rsvp_mode:e.rsvp_mode,list_behavior:e.list_behavior||'strict',max_people:e.max_people,checkin_mode:e.checkin_mode,
+  rsvp_mode:e.rsvp_mode,list_behavior:e.list_behavior||'strict',max_people:e.rsvp_mode==='free'?100:e.max_people,checkin_mode:e.checkin_mode,
   appearance:parseObject(e.appearance),extra_fields:{...DEFAULT_EXTRA_FIELDS,...parseObject(e.extra_fields)},
   public_texts:parseObject(e.public_texts),welcome_message:e.welcome_message,
   studio_name:e.studio_name,brand:parseObject(e.brand),turnstile_sitekey:env.TURNSTILE_SITEKEY||''
@@ -99,8 +99,8 @@ async function guestData(env,g,privateView=false) {
 }
 
 function compositionLimits(e,g,members) {
- const confirmed=members.filter(m=>m.attendance_status==='yes');
- if(confirmed.length>Math.min(e.max_people,g.max_people)) fail(400,'A quantidade de pessoas confirmadas ultrapassa o limite deste convite.');
+ const confirmed=members.filter(m=>m.attendance_status==='yes'),eventLimit=e.rsvp_mode==='free'?100:e.max_people,guestLimit=e.rsvp_mode==='free'?100:g.max_people;
+ if(confirmed.length>Math.min(eventLimit,guestLimit)) fail(400,'A quantidade de pessoas confirmadas ultrapassa o limite deste convite.');
  const adults=confirmed.filter(m=>m.person_type==='adult').length;
  const children=confirmed.filter(m=>m.person_type==='child').length;
  if(g.max_adults_allowed!==null&&g.max_adults_allowed!==undefined&&adults>Number(g.max_adults_allowed)) fail(400,`Este convite permite no máximo ${g.max_adults_allowed} adulto(s).`);
@@ -212,7 +212,7 @@ async function insertEvent(env,u,b,{copyOf=null}={}) {
  await run(env,`INSERT INTO events(id,studio_id,title,slug,event_date,location,deadline,status,rsvp_mode,max_people,checkin_mode,appearance,welcome_message,client_token,client_permissions,created_at,list_behavior,extra_fields,public_texts,archived_at)
  VALUES(?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,NULL)`,
   eventId,u.studio_id,text(b.title),eventSlug,date(b.event_date),text(b.location,300,false),date(b.deadline),
-  choice(b.rsvp_mode||'free',['free','list']),integer(b.max_people||10,1,100),choice(b.checkin_mode||'off',['off','family','individual']),
+  choice(b.rsvp_mode||'free',['free','list']),choice(b.rsvp_mode||'free',['free','list'])==='free'?100:integer(b.max_people||10,1,100),choice(b.checkin_mode||'off',['off','family','individual']),
   appearance,text(b.welcome_message,2000,false),token(),permissions,created,choice(b.list_behavior||'strict',['strict','flexible']),extra,publicTexts);
  await audit(env,u.studio_id,u.id,copyOf?'duplicate_event':'create_event',{event_id:eventId,source_event_id:copyOf||null});
  return tenantEvent(env,u,eventId);
@@ -252,11 +252,11 @@ export async function eventsRoutes(request,env,path,url) {
     if(e.rsvp_mode==='list')fail(403,'Abra o link individual enviado pelo anfitrião.');
     const created=now(),guestId=id(),guestName=text(b.name);
     const members=Array.isArray(b.members)&&b.members.length?b.members:[{name:guestName,person_type:'adult',attendance_status:b.response_status||'pending'}];
-    if(members.length>e.max_people)fail(400,'Informe as pessoas dentro do limite do convite.');
+    if(members.length>(e.rsvp_mode==='free'?100:e.max_people))fail(400,'Informe as pessoas dentro do limite do convite.');
     try{
      await run(env,`INSERT INTO guests(id,event_id,name,phone,response_status,max_people,message,dietary,token,qr_token,created_at,updated_at,group_label,max_adults_allowed,max_children_allowed,creation_request_id,source,responded_at,deleted_at,notes)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      guestId,e.id,guestName,'','pending',e.max_people,'','',token(),null,created,created,'',null,null,requestId,'public',null,null,'');
+      guestId,e.id,guestName,'','pending',e.rsvp_mode==='free'?100:e.max_people,'','',token(),null,created,created,'',null,null,requestId,'public',null,null,'');
      g=await one(env,'SELECT * FROM guests WHERE id=?',guestId);
     }catch(error){
      if(requestId)g=await one(env,'SELECT * FROM guests WHERE event_id=? AND creation_request_id=?',e.id,requestId);
@@ -379,7 +379,7 @@ export async function eventsRoutes(request,env,path,url) {
     WHERE id=? AND studio_id=?`,
     text(b.title??e.title),date(b.event_date??e.event_date),text(b.location??e.location,300,false),date(b.deadline===undefined?e.deadline:b.deadline),
     nextStatus,choice(b.rsvp_mode??e.rsvp_mode,['free','list']),choice(b.list_behavior??e.list_behavior,['strict','flexible']),
-    integer(b.max_people??e.max_people,1,100),choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
+    choice(b.rsvp_mode??e.rsvp_mode,['free','list'])==='free'?100:integer(b.max_people??e.max_people,1,100),choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
     b.appearance?safeObject(cleanAppearance(b.appearance,e.appearance)):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
     b.public_texts?safeObject(b.public_texts):e.public_texts,b.client_permissions?safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS)):e.client_permissions,text(b.welcome_message??e.welcome_message,2000,false),
     nextStatus==='archived'?(e.archived_at||now()):null,e.id,u.studio_id);
