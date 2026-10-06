@@ -242,23 +242,132 @@ async function uniqueEventSlug(env,studioId,base) {
  return candidate;
 }
 
-async function insertEvent(env,u,b,{copyOf=null}={}) {
+function reusableEventConfig(value,current={}) {
+ const base=parseObject(current),raw=parseObject(value);
+ const mode=choice(raw.rsvp_mode??base.rsvp_mode??'free',['free','list']);
+ const currentLimit=base.max_people===undefined?null:base.max_people;
+ const maxPeople=mode==='list'
+  ? (nullablePeopleLimit(raw.max_people===undefined?currentLimit:raw.max_people)??10)
+  : nullablePeopleLimit(raw.max_people===undefined?currentLimit:raw.max_people);
+ return {
+  rsvp_mode:mode,
+  list_behavior:choice(raw.list_behavior??base.list_behavior??'strict',['strict','flexible']),
+  max_people:maxPeople,
+  checkin_mode:choice(raw.checkin_mode??base.checkin_mode??'off',['off','family','individual']),
+  appearance:cleanAppearance(raw.appearance??base.appearance??{},base.appearance??{}),
+  welcome_message:text(raw.welcome_message??base.welcome_message??'',2000,false),
+  extra_fields:{...DEFAULT_EXTRA_FIELDS,...boolObject(parseObject(raw.extra_fields??base.extra_fields),DEFAULT_EXTRA_FIELDS)},
+  public_texts:parseObject(raw.public_texts??base.public_texts),
+  client_permissions:boolObject(parseObject(raw.client_permissions??base.client_permissions),DEFAULT_CLIENT_PERMISSIONS)
+ };
+}
+
+function reusableConfigFromEvent(e) {
+ return reusableEventConfig({
+  rsvp_mode:e.rsvp_mode,list_behavior:e.list_behavior,max_people:eventPeopleLimit(e),checkin_mode:e.checkin_mode,
+  appearance:parseObject(e.appearance),welcome_message:e.welcome_message,
+  extra_fields:parseObject(e.extra_fields),public_texts:parseObject(e.public_texts),client_permissions:parseObject(e.client_permissions)
+ });
+}
+
+function remapAppearance(appearance,map) {
+ const next={...parseObject(appearance)};
+ for(const key of ['background_url','cover_url','logo_url','background']){
+  if(typeof next[key]==='string'&&map.has(next[key]))next[key]=map.get(next[key]);
+ }
+ if(!next.background_url&&next.background_type!=='none')next.background_type='none';
+ return next;
+}
+
+async function copyMediaObjects(env,rows,targetPrefix,sourceRef) {
+ const uploaded=[],statements=[],map=new Map();
+ try{
+  for(const row of rows){
+   const object=await env.MEDIA.get(row.object_key);
+   if(!object)fail(409,'Uma mídia reutilizável não está mais disponível. Remova ou substitua essa mídia antes de continuar.');
+   const mediaId=id(),objectKey=`${targetPrefix}/${mediaId}`;
+   await env.MEDIA.put(objectKey,object.body,{httpMetadata:{contentType:row.mime_type}});
+   uploaded.push(objectKey);
+   map.set(sourceRef(row),mediaId);
+   statements.push({id:mediaId,object_key:objectKey,mime_type:row.mime_type,size_bytes:Number(row.size_bytes||0),media_kind:row.media_kind||'background_image',original_name:row.original_name||''});
+  }
+  return {uploaded,statements,map};
+ }catch(error){
+  await Promise.all(uploaded.map(key=>env.MEDIA.delete(key).catch(()=>{})));
+  throw error;
+ }
+}
+
+async function prepareEvent(env,u,b) {
  await requireEventEntitlement(env,u.studio_id);
- const eventId=id(),created=now();
- const eventSlug=await uniqueEventSlug(env,u.studio_id,b.slug||b.title);
- const appearance=b.appearance?safeObject(cleanAppearance(b.appearance)):'{}';
- const extra=safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)});
- const publicTexts=safeObject(parseObject(b.public_texts));
- const permissions=safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS));
- const rsvpMode=choice(b.rsvp_mode||'free',['free','list']),peopleLimit=rsvpMode==='list'?(nullablePeopleLimit(b.max_people)??10):nullablePeopleLimit(b.max_people);
+ const eventId=id(),created=now(),eventSlug=await uniqueEventSlug(env,u.studio_id,b.slug||b.title);
+ const config=reusableEventConfig(b);
+ return {
+  eventId,created,eventSlug,
+  title:text(b.title),event_date:date(b.event_date),location:text(b.location,300,false),deadline:date(b.deadline),
+  ...config,
+  appearance:safeObject(config.appearance),extra_fields:safeObject(config.extra_fields),public_texts:safeObject(config.public_texts),
+  client_permissions:safeObject(config.client_permissions),client_token:token()
+ };
+}
+
+const eventInsertStmt=(env,p)=>stmt(env,`INSERT INTO events(id,studio_id,title,slug,event_date,location,deadline,status,rsvp_mode,max_people,checkin_mode,appearance,welcome_message,client_token,client_permissions,created_at,list_behavior,extra_fields,public_texts,max_people_limit,archived_at)
+ VALUES(?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+ p.eventId,p.studio_id,p.title,p.eventSlug,p.event_date,p.location,p.deadline,p.rsvp_mode,p.max_people??100,p.checkin_mode,
+ p.appearance,p.welcome_message,p.client_token,p.client_permissions,p.created,p.list_behavior,p.extra_fields,p.public_texts,p.max_people);
+
+async function insertEvent(env,u,b,{copyOf=null,templateId=null}={}) {
+ const p={...(await prepareEvent(env,u,b)),studio_id:u.studio_id};
  await run(env,`INSERT INTO events(id,studio_id,title,slug,event_date,location,deadline,status,rsvp_mode,max_people,checkin_mode,appearance,welcome_message,client_token,client_permissions,created_at,list_behavior,extra_fields,public_texts,max_people_limit,archived_at)
  VALUES(?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
-  eventId,u.studio_id,text(b.title),eventSlug,date(b.event_date),text(b.location,300,false),date(b.deadline),
-  rsvpMode,peopleLimit??100,choice(b.checkin_mode||'off',['off','family','individual']),
-  appearance,text(b.welcome_message,2000,false),token(),permissions,created,choice(b.list_behavior||'strict',['strict','flexible']),extra,publicTexts,peopleLimit);
- await audit(env,u.studio_id,u.id,copyOf?'duplicate_event':'create_event',{event_id:eventId,source_event_id:copyOf||null});
- return tenantEvent(env,u,eventId);
+  p.eventId,p.studio_id,p.title,p.eventSlug,p.event_date,p.location,p.deadline,p.rsvp_mode,p.max_people??100,p.checkin_mode,
+  p.appearance,p.welcome_message,p.client_token,p.client_permissions,p.created,p.list_behavior,p.extra_fields,p.public_texts,p.max_people);
+ await audit(env,u.studio_id,u.id,copyOf?'duplicate_event':templateId?'create_event_from_template':'create_event',{event_id:p.eventId,source_event_id:copyOf||null,template_id:templateId||null});
+ return tenantEvent(env,u,p.eventId);
 }
+
+async function insertEventWithCopiedMedia(env,u,b,{sourceEvent=null,sourceTemplate=null}={}) {
+ const p={...(await prepareEvent(env,u,b)),studio_id:u.studio_id};
+ let rows=[],sourceRef;
+ if(sourceEvent){
+  rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL ORDER BY created_at',sourceEvent.id,u.studio_id);
+  sourceRef=row=>`/media/${row.id}`;
+ }else if(sourceTemplate){
+  rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM template_media WHERE template_id=? AND studio_id=? ORDER BY created_at',sourceTemplate.id,u.studio_id);
+  sourceRef=row=>`template:${row.id}`;
+ }
+ const copied=await copyMediaObjects(env,rows,`${u.studio_id}/${p.eventId}`,sourceRef);
+ const urlMap=new Map([...copied.map.entries()].map(([oldRef,newId])=>[oldRef,`/media/${newId}`]));
+ const rawAppearance=remapAppearance(parseObject(p.appearance),urlMap);
+ p.appearance=safeObject(cleanAppearance(rawAppearance));
+ const queries=[eventInsertStmt(env,p)];
+ for(const media of copied.statements)queries.push(stmt(env,'INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)',media.id,p.eventId,u.studio_id,media.object_key,media.mime_type,media.size_bytes,p.created,media.media_kind,media.original_name));
+ const action=sourceEvent?'duplicate_event':'create_event_from_template';
+ queries.push(stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,?,NULL)',id(),u.studio_id,u.id,action,JSON.stringify({event_id:p.eventId,source_event_id:sourceEvent?.id||null,template_id:sourceTemplate?.id||null}),p.created,p.eventId));
+ try{await env.DB.batch(queries);}
+ catch(error){await Promise.all(copied.uploaded.map(key=>env.MEDIA.delete(key).catch(()=>{})));throw error;}
+ return tenantEvent(env,u,p.eventId);
+}
+
+async function createTemplate(env,u,name,config,{sourceEvent=null}={}) {
+ const cleanName=text(name,120);
+ if(await one(env,'SELECT id FROM event_templates WHERE studio_id=? AND name=? COLLATE NOCASE',u.studio_id,cleanName))fail(409,'Já existe um modelo com esse nome.');
+ const templateId=id(),stamp=now(),baseConfig=reusableEventConfig(config);
+ let copied={uploaded:[],statements:[],map:new Map()};
+ if(sourceEvent){
+  const rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL ORDER BY created_at',sourceEvent.id,u.studio_id);
+  copied=await copyMediaObjects(env,rows,`templates/${u.studio_id}/${templateId}`,row=>`/media/${row.id}`);
+  baseConfig.appearance=remapAppearance(baseConfig.appearance,new Map([...copied.map.entries()].map(([oldRef,newId])=>[oldRef,`template:${newId}`])));
+ }
+ const queries=[stmt(env,'INSERT INTO event_templates(id,studio_id,name,config,created_at,updated_at) VALUES(?,?,?,?,?,?)',templateId,u.studio_id,cleanName,safeObject(baseConfig),stamp,stamp)];
+ for(const media of copied.statements)queries.push(stmt(env,'INSERT INTO template_media(id,template_id,studio_id,object_key,mime_type,size_bytes,media_kind,original_name,created_at) VALUES(?,?,?,?,?,?,?,?,?)',media.id,templateId,u.studio_id,media.object_key,media.mime_type,media.size_bytes,media.media_kind,media.original_name,stamp));
+ queries.push(stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,?,NULL)',id(),u.studio_id,u.id,'template_created',JSON.stringify({template_id:templateId,source_event_id:sourceEvent?.id||null}),stamp,sourceEvent?.id||null));
+ try{await env.DB.batch(queries);}
+ catch(error){await Promise.all(copied.uploaded.map(key=>env.MEDIA.delete(key).catch(()=>{})));throw error;}
+ return {id:templateId,name:cleanName,config:baseConfig,created_at:stamp,updated_at:stamp,media_count:copied.statements.length};
+}
+
+function templateData(t){return {...t,config:parseObject(t.config),media_count:Number(t.media_count||0)};}
 
 function sanitizedClientGuest(data,permissions){
  const copy={...data,members:data.members.map(({qr_token,...m})=>m)};
@@ -391,6 +500,52 @@ export async function eventsRoutes(request,env,path,url) {
   fail(403,'Permissão não disponível nesse link.');
  }
 
+ if(path==='/api/templates'){
+  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');owner(u);
+  if(method==='GET'){
+   const templates=await all(env,`SELECT t.*,(SELECT COUNT(*) FROM template_media m WHERE m.template_id=t.id) media_count FROM event_templates t WHERE t.studio_id=? ORDER BY t.updated_at DESC`,u.studio_id);
+   return json({templates:templates.map(templateData)});
+  }
+  if(method==='POST'){
+   const b=await body(request),template=await createTemplate(env,u,b.name,reusableEventConfig(b.config||{}));
+   return json({template},201);
+  }
+  fail(405,'Método não permitido.');
+ }
+
+ let templateMatch=path.match(/^\/api\/templates\/([^/]+)(?:\/(use))?$/);
+ if(templateMatch){
+  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');owner(u);
+  const t=await one(env,`SELECT t.*,(SELECT COUNT(*) FROM template_media m WHERE m.template_id=t.id) media_count FROM event_templates t WHERE t.id=? AND t.studio_id=?`,templateMatch[1],u.studio_id);
+  if(!t)fail(404,'Modelo não encontrado.');
+  if(templateMatch[2]==='use'&&method==='POST'){
+   const b=await body(request),config=reusableEventConfig(parseObject(t.config));
+   const event=await insertEventWithCopiedMedia(env,u,{...config,title:b.title,slug:b.slug,event_date:b.event_date,location:b.location,deadline:b.deadline},{sourceTemplate:t});
+   return json({event},201);
+  }
+  if(!templateMatch[2]&&method==='GET')return json({template:templateData(t)});
+  if(!templateMatch[2]&&method==='PATCH'){
+   const b=await body(request),nextName=b.name===undefined?t.name:text(b.name,120);
+   if(nextName.toLowerCase()!==String(t.name).toLowerCase()&&await one(env,'SELECT id FROM event_templates WHERE studio_id=? AND name=? COLLATE NOCASE AND id<>?',u.studio_id,nextName,t.id))fail(409,'Já existe um modelo com esse nome.');
+   const current=parseObject(t.config),nextConfig=b.config===undefined?current:reusableEventConfig({...current,...parseObject(b.config)},current);
+   await env.DB.batch([
+    stmt(env,'UPDATE event_templates SET name=?,config=?,updated_at=? WHERE id=? AND studio_id=?',nextName,safeObject(nextConfig),now(),t.id,u.studio_id),
+    stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),u.studio_id,u.id,'template_updated',JSON.stringify({template_id:t.id}),now())
+   ]);
+   return json({template:templateData({...t,name:nextName,config:safeObject(nextConfig),updated_at:now()})});
+  }
+  if(!templateMatch[2]&&method==='DELETE'){
+   const media=await all(env,'SELECT object_key FROM template_media WHERE template_id=? AND studio_id=?',t.id,u.studio_id);
+   await env.DB.batch([
+    stmt(env,'DELETE FROM event_templates WHERE id=? AND studio_id=?',t.id,u.studio_id),
+    stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),u.studio_id,u.id,'template_deleted',JSON.stringify({template_id:t.id,name:t.name}),now())
+   ]);
+   await Promise.all(media.map(x=>env.MEDIA.delete(x.object_key).catch(()=>{})));
+   return json({ok:true});
+  }
+  fail(405,'Método não permitido.');
+ }
+
  if(path==='/api/events/entitlement'){
   const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
   if(method!=='GET')fail(405,'Método não permitido.');
@@ -418,7 +573,7 @@ export async function eventsRoutes(request,env,path,url) {
   }
  }
 
- match=path.match(/^\/api\/events\/([^/]+)(?:\/(guests|checkins|client-link|media|audit|duplicate|archive|restore)(?:\/([^/]+))?(?:\/([^/]+))?)?$/);
+ match=path.match(/^\/api\/events\/([^/]+)(?:\/(guests|checkins|client-link|media|audit|duplicate|template|archive|restore)(?:\/([^/]+))?(?:\/([^/]+))?)?$/);
  if(match){
   const u=await session(request,env),e=await tenantEvent(env,u,match[1]),sub=match[2],key=match[3],action=match[4];
 
@@ -442,9 +597,13 @@ export async function eventsRoutes(request,env,path,url) {
   }
 
   if(sub==='duplicate'&&method==='POST'){
-   const source={...e,title:`${e.title} (cópia)`,slug:`${e.slug}-copia`,appearance:parseObject(e.appearance),extra_fields:parseObject(e.extra_fields),public_texts:parseObject(e.public_texts),client_permissions:parseObject(e.client_permissions)};
-   const event=await insertEvent(env,u,source,{copyOf:e.id});
+   const source={...reusableConfigFromEvent(e),title:`${e.title} (cópia)`,slug:`${e.slug}-copia`,event_date:null,location:'',deadline:null};
+   const event=await insertEventWithCopiedMedia(env,u,source,{sourceEvent:e});
    return json({event},201);
+  }
+  if(sub==='template'&&method==='POST'){
+   const b=await body(request),template=await createTemplate(env,u,b.name,reusableConfigFromEvent(e),{sourceEvent:e});
+   return json({template},201);
   }
   if(sub==='archive'&&method==='POST'){
    await run(env,"UPDATE events SET status='archived',archived_at=? WHERE id=? AND studio_id=?",now(),e.id,u.studio_id);
