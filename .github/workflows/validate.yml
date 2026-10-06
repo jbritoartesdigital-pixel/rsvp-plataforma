@@ -2,6 +2,9 @@ name: Validar plataforma sem publicar
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [docs/VALIDATE_NOW]
 
 permissions:
   contents: read
@@ -41,3 +44,14 @@ jobs:
         run: pnpm exec wrangler deploy --dry-run --outdir dist/cloudflare
         env:
           WRANGLER_SEND_METRICS: "false"
+
+      - name: Dry-run do Worker HML
+        run: pnpm exec wrangler deploy --dry-run --env hml --outdir dist/cloudflare-hml
+        env:
+          WRANGLER_SEND_METRICS: "false"
+
+      - name: Instalar Playwright para smoke local
+        run: npm install --no-save playwright@1.55.0
+
+      - name: Browser smoke em Chrome
+        run: BROWSER_CHANNEL=chrome node tests/browser-smoke.mjs
