@@ -1,9 +1,6 @@
 name: Preparar produção sem publicar
 
 on:
-  push:
-    branches: [main]
-    paths: [docs/PROD_PREP_NOW]
   workflow_dispatch:
 
 permissions:
