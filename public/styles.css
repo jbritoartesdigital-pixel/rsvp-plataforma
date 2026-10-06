@@ -1194,3 +1194,18 @@ body.modal-open{overflow:hidden}
  .client-settings-grid{display:block}
  .client-tab-panel:not(.is-hidden)>.card{max-width:880px}
 }
+
+/* Client panel tabs are true separate screens */
+.client-overview-grid{display:grid;gap:12px}
+.client-appearance-workspace{display:grid;gap:14px;min-width:0}
+.client-event-tabs{margin-top:14px}
+.list-only-settings[hidden]{display:none!important}
+@media(min-width:900px){
+ .client-overview-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .client-appearance-workspace{grid-template-columns:minmax(0,1.5fr) minmax(300px,.62fr);align-items:start}
+ .client-appearance-workspace .appearance-sticky-preview{position:sticky;top:18px}
+}
+@media(max-width:719px){
+ .client-event-tabs{margin-left:0;margin-right:0}
+ .client-appearance-workspace .appearance-sticky-preview{order:-1}
+}
