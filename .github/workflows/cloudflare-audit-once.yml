@@ -1,35 +1,26 @@
-name: Smoke público HML
+name: Auditar DNS HML
 
 on:
-  push:
-    branches: [main]
-    paths: [docs/HML_PUBLIC_SMOKE_NOW]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  smoke:
+  audit:
     runs-on: ubuntu-latest
     steps:
-      - name: Validar domínio principal e wildcard HML
+      - uses: actions/checkout@v4
+      - name: Consultar resolução pública do namespace HML
         run: |
           set -euo pipefail
-          random_host="slug-smoke-$(date -u +%Y%m%d%H%M%S).hml.presencaconfirmada.com.br"
-
-          root_a="$(dig +short hml.presencaconfirmada.com.br A | paste -sd, -)"
+          random_host="slug-audit-$(date -u +%Y%m%d%H%M%S).hml.presencaconfirmada.com.br"
+          hml_a="$(dig +short hml.presencaconfirmada.com.br A | paste -sd, -)"
+          hml_aaaa="$(dig +short hml.presencaconfirmada.com.br AAAA | paste -sd, -)"
           tenant_a="$(dig +short "$random_host" A | paste -sd, -)"
-          root_code="$(curl -L -sS -o /tmp/root.html -w '%{http_code}' --max-time 20 https://hml.presencaconfirmada.com.br/)"
-          tenant_code="$(curl -L -sS -o /tmp/plans.json -w '%{http_code}' --max-time 20 "https://$random_host/api/plans")"
-
-          echo "hml_root_dns=$root_a"
-          echo "hml_root_http=$root_code"
-          echo "tenant_host=$random_host"
-          echo "tenant_dns=$tenant_a"
-          echo "tenant_api_http=$tenant_code"
-
-          test -n "$root_a"
-          test -n "$tenant_a"
-          test "$root_code" = "200"
-          test "$tenant_code" = "200"
-          jq -e '.plans | type == "array"' /tmp/plans.json >/dev/null
+          tenant_aaaa="$(dig +short "$random_host" AAAA | paste -sd, -)"
+          hml_code="$(curl -L -sS -o /tmp/hml.html -w '%{http_code}' --max-time 15 https://hml.presencaconfirmada.com.br/ || true)"
+          tenant_code="$(curl -L -sS -o /tmp/tenant.html -w '%{http_code}' --max-time 15 "https://$random_host/" || true)"
+          printf 'HML root: A=%s AAAA=%s HTTP=%s\n' "$hml_a" "$hml_aaaa" "$hml_code"
+          printf 'HML tenant: host=%s A=%s AAAA=%s HTTP=%s\n' "$random_host" "$tenant_a" "$tenant_aaaa" "$tenant_code"
+          test -n "$hml_a$hml_aaaa"
