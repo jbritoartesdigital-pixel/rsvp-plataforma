@@ -420,10 +420,15 @@ test('links de homologação usam namespace *.hml sem ocupar domínio final',asy
  const a=await f.register();
  f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
  const e=(await f.request('/api/events','POST',{title:'Evento HML',slug:'evento-hml'},a.cookie)).body.event;
- assert.equal(e.public_url,'https://marca-a.hml.presencaconfirmada.com.br/evento-hml');
  const link=await f.request('/api/events/'+e.id+'/client-link','POST',{view:true},a.cookie);
  assert.equal(link.status,200);
  assert.match(link.body.url,/^https:\/\/marca-a\.hml\.presencaconfirmada\.com\.br\/cliente\//);
+
+ const worker=(await import('../src/index.js')).default;
+ const publicResponse=await worker.fetch(new Request('https://marca-a.hml.presencaconfirmada.com.br/api/public/marca-a/evento-hml'),f.env);
+ assert.equal(publicResponse.status,200);
+ const publicBody=await publicResponse.json();
+ assert.equal(publicBody.event.title,'Evento HML');
 });
 
 test('hostname da conviteira não cruza eventos nem painel privado entre tenants',async()=>{
