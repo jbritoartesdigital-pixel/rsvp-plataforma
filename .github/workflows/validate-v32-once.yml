@@ -1,0 +1,45 @@
+name: Validar V3.2 pixel parity uma vez
+
+on:
+  push:
+    branches:
+      - v3-2-pixel-parity
+    paths:
+      - '.github/workflows/validate-v32-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-v32-parity
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Sintaxe, testes e build
+        run: pnpm run validate
+      - name: Validar migrations D1 localmente
+        run: pnpm exec wrangler d1 migrations apply DB --local
+        env:
+          WRANGLER_SEND_METRICS: "false"
+      - name: Dry-run Worker produção
+        run: pnpm exec wrangler deploy --dry-run --outdir dist/cloudflare
+        env:
+          WRANGLER_SEND_METRICS: "false"
+      - name: Dry-run Worker HML
+        run: pnpm exec wrangler deploy --dry-run --env hml --outdir dist/cloudflare-hml
+        env:
+          WRANGLER_SEND_METRICS: "false"
+      - name: Instalar Playwright
+        run: pnpm add -D playwright@1.55.0
+      - name: Browser smoke Chrome
+        run: BROWSER_CHANNEL=chrome node tests/browser-smoke.mjs
