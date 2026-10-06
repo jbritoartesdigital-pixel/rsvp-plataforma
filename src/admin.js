@@ -83,7 +83,7 @@ async function usageOverview(env){
 async function exceptionsOverview(env){
  const stamp=now(),dayAgo=new Date(Date.now()-24*3600000).toISOString(),weekAgo=new Date(Date.now()-7*86400000).toISOString(),monthAgo=new Date(Date.now()-30*86400000).toISOString();
  const items=[];
- const missingCredits=await all(env,`SELECT o.id,s.name,p.id payment_id,o.quantity FROM billing_orders o
+ const missingCredits=await all(env,`SELECT o.id,o.studio_id,s.name,p.id payment_id,o.quantity FROM billing_orders o
   JOIN studios s ON s.id=o.studio_id JOIN payments p ON p.order_id=o.id AND p.status='approved'
   WHERE o.kind='credits' AND NOT EXISTS(SELECT 1 FROM credit_ledger l WHERE l.source_key='order:'||o.id) LIMIT 50`);
  for(const x of missingCredits)items.push({type:'credit_missing',severity:'error',studio_id:x.studio_id,title:'Pagamento aprovado sem crédito liberado',detail:`${x.name}: compra de ${x.quantity} crédito(s).`,order_id:x.id});
@@ -101,7 +101,9 @@ async function exceptionsOverview(env){
  const reversals=await all(env,`SELECT p.id,o.id order_id,o.studio_id,s.name,p.status,p.updated_at FROM payments p JOIN billing_orders o ON o.id=p.order_id JOIN studios s ON s.id=o.studio_id
   WHERE p.status IN ('refunded','charged_back') AND p.updated_at>=? ORDER BY p.updated_at DESC LIMIT 50`,monthAgo);
  for(const x of reversals)items.push({type:x.status,severity:x.status==='charged_back'?'error':'attention',studio_id:x.studio_id,title:x.status==='charged_back'?'Chargeback recebido':'Pagamento estornado',detail:`${x.name}: revisar impacto da cobrança.`,order_id:x.order_id});
- const integrations=await all(env,`SELECT * FROM integration_events WHERE status='error' AND created_at>=? ORDER BY created_at DESC LIMIT 50`,weekAgo);
+ const integrations=await all(env,`SELECT x.* FROM integration_events x WHERE x.status='error' AND x.created_at>=?
+  AND NOT EXISTS(SELECT 1 FROM integration_events ok WHERE ok.provider=x.provider AND ok.kind=x.kind AND COALESCE(ok.external_id,'')=COALESCE(x.external_id,'') AND ok.status='ok' AND ok.created_at>x.created_at)
+  ORDER BY x.created_at DESC LIMIT 50`,weekAgo);
  for(const x of integrations)items.push({type:'integration',severity:'error',studio_id:x.studio_id,title:x.provider==='resend'?'Falha no envio de e-mail':'Falha de integração',detail:x.message||`${x.provider}: ${x.kind}`,integration_id:x.id});
  const negative=await all(env,"SELECT id studio_id,name,credits FROM studios WHERE credits<0 LIMIT 50");
  for(const x of negative)items.push({type:'negative_credits',severity:'error',studio_id:x.studio_id,title:'Saldo de créditos negativo',detail:`${x.name}: saldo ${x.credits}.`});
