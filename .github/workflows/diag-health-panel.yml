@@ -1,0 +1,45 @@
+name: Diagnosticar painel de saúde
+
+on:
+  push:
+    branches:
+      - diag-health-panel
+    paths:
+      - '.github/workflows/diag-health-panel.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: commercial
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.19.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Consultar saúde financeira e integrações
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler d1 execute DB --remote --command "SELECT provider,kind,status,message,created_at FROM integration_events ORDER BY created_at DESC LIMIT 30;"
+          pnpm exec wrangler d1 execute DB --remote --command "SELECT p.status,p.updated_at,o.kind,o.created_at FROM payments p JOIN billing_orders o ON o.id=p.order_id ORDER BY p.updated_at DESC LIMIT 15;"
+      - name: Smoke externo dos domínios
+        run: |
+          set -euo pipefail
+          echo "principal:"
+          curl -fSsL --retry 3 --retry-delay 1 https://app.presencaconfirmada.com.br/api/plans >/tmp/main.json
+          jq -e '.plans | length > 0' /tmp/main.json >/dev/null
+          echo ok
+          echo "wildcard:"
+          curl -fSsL --retry 3 --retry-delay 1 https://libri-convites-1.presencaconfirmada.com.br/api/plans >/tmp/wild.json
+          jq -e '.plans | length > 0' /tmp/wild.json >/dev/null
+          echo ok
