@@ -150,6 +150,14 @@ test('reconfirmar gera QR novo e status pending também revoga; evento não acei
  const g2=(await f.request('/api/public/marca-a/um/rsvp','POST',{...data,token:g.token})).body.guest;assert.ok(g2.qr_token);assert.notEqual(g2.qr_token,g.qr_token);
  assert.equal((await f.request(`/api/q/${g.qr_token}`)).status,403);
 });
+test('recuperação por e-mail usa remetente verificado e link temporário',async()=>{
+ const f=fixture(),a=await f.register(),calls=[];
+ f.env.MAILER_URL='https://api.resend.com/emails';f.env.MAILER_TOKEN='mailer-test';f.env.MAILER_FROM='Presença Confirmada <acesso@presencaconfirmada.com.br>';
+ f.env.MAILER_FETCH=async(url,options)=>{calls.push({url,headers:options.headers,body:JSON.parse(options.body)});return Response.json({id:'email-test'});};
+ const r=await f.request('/api/auth/reset/request','POST',{email:a.user.email});assert.equal(r.status,200);assert.equal(calls.length,1);
+ assert.equal(calls[0].url,'https://api.resend.com/emails');assert.equal(calls[0].headers.authorization,'Bearer mailer-test');assert.equal(calls[0].body.from,f.env.MAILER_FROM);assert.deepEqual(calls[0].body.to,[a.user.email]);assert.match(calls[0].body.text,/expira em 30 minutos/);assert.match(calls[0].body.text,/\/app\/reset\?token=/);
+ assert.equal(f.sql("SELECT COUNT(*) n FROM auth_challenges WHERE kind='reset'").n,1);
+});
 test('reset de senha revoga sessões; papel da equipe não permite checkout ou ajuste',async()=>{
  const f=fixture(),a=await f.register();
  const team=await f.request('/api/team','POST',{email:'team@example.com',name:'Equipe',password:'equipe-senha-longa'},a.cookie);assert.equal(team.status,201);
