@@ -415,6 +415,17 @@ test('link privado da cliente usa subdomínio da conviteira',async()=>{
  assert.match(link.body.url,/^https:\/\/marca-a\.presencaconfirmada\.com\.br\/cliente\//);
 });
 
+test('links de homologação usam namespace *.hml sem ocupar domínio final',async()=>{
+ const f=fixture();f.env.APP_ORIGIN='https://hml.presencaconfirmada.com.br';
+ const a=await f.register();
+ f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Evento HML',slug:'evento-hml'},a.cookie)).body.event;
+ assert.equal(e.public_url,'https://marca-a.hml.presencaconfirmada.com.br/evento-hml');
+ const link=await f.request('/api/events/'+e.id+'/client-link','POST',{view:true},a.cookie);
+ assert.equal(link.status,200);
+ assert.match(link.body.url,/^https:\/\/marca-a\.hml\.presencaconfirmada\.com\.br\/cliente\//);
+});
+
 test('hostname da conviteira não cruza eventos nem painel privado entre tenants',async()=>{
  const f=fixture(),a=await f.register(),b=await f.register('b');
  f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
