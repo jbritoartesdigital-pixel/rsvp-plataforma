@@ -1,5 +1,5 @@
 import { generateRegistrationOptions,verifyRegistrationResponse,generateAuthenticationOptions,verifyAuthenticationResponse } from '@simplewebauthn/server';
-import { fail,now,id,token,b64,unb64,hash,stmt,one,all,run,body,text,slug,limit,audit,json } from './core.js';
+import { fail,now,id,token,b64,unb64,hash,stmt,one,all,run,body,text,slug,limit,audit,integrationEvent,json } from './core.js';
 const HML_FREE_ACCESS_HASH='lZBjs48uc64V0naBB6BZ289pSUlb7RBignmBS6XM1uU';
 const isHml=env=>String(env.APP_ORIGIN||'').includes('hml.presencaconfirmada.com.br');
 async function ensureHmlFreeAccess(env,user){
@@ -62,9 +62,10 @@ export async function authRoutes(request,env,path) {
   const u=await session(request,env),b=await body(request),stored=await one(env,'SELECT password_hash FROM users WHERE id=?',u.id);
   if(!await passwordOK(b.current_password,stored.password_hash)) fail(403,'Senha atual inválida.');
   await env.DB.batch([stmt(env,'UPDATE users SET password_hash=? WHERE id=?',await passwordHash(b.password),u.id),stmt(env,'DELETE FROM sessions WHERE user_id=?',u.id)]);
+  await audit(env,u.studio_id,u.id,'password_changed');
   return json({ok:true},200,await newSession(env,u.id));
  }
- if(path==='/api/auth/logout-all' && m==='POST') { const u=await session(request,env); await run(env,'DELETE FROM sessions WHERE user_id=?',u.id); return json({ok:true}); }
+ if(path==='/api/auth/logout-all' && m==='POST') { const u=await session(request,env); await run(env,'DELETE FROM sessions WHERE user_id=?',u.id); await audit(env,u.studio_id,u.id,'logout_all_sessions'); return json({ok:true}); }
  if(path==='/api/team') {
   const u=await session(request,env); owner(u); if(!u.studio_id) fail(400,'Selecione uma conviteira.');
   if(m==='GET') return json({users:await all(env,'SELECT id,name,email,role,EXISTS(SELECT 1 FROM user_revocations r WHERE r.user_id=users.id) revoked FROM users WHERE studio_id=?',u.studio_id)});
@@ -81,11 +82,23 @@ export async function authRoutes(request,env,path) {
  }
  if(path==='/api/auth/reset/request' && m==='POST') {
   await limit(env,`reset:${request.headers.get('cf-connecting-ip')||'local'}`,5);
-  const b=await body(request),u=await one(env,'SELECT id,email FROM users WHERE email=?',text(b.email,254).toLowerCase());
+  const b=await body(request),u=await one(env,'SELECT id,email,studio_id FROM users WHERE email=?',text(b.email,254).toLowerCase());
   if(u && env.MAILER_URL && env.MAILER_TOKEN && env.MAILER_FROM) {
    const raw=token(),challenge=id(),resetUrl=`${env.APP_ORIGIN}/app/reset?token=${raw}`; await run(env,'INSERT INTO auth_challenges VALUES(?,?,?,?,?)',challenge,u.id,'reset',await hash(raw),new Date(Date.now()+1800000).toISOString());
-   const res=await (env.MAILER_FETCH||fetch)(env.MAILER_URL,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${env.MAILER_TOKEN}`},body:JSON.stringify({from:env.MAILER_FROM,to:[u.email],subject:'Recuperar acesso · Presença Confirmada',text:`Você pediu para redefinir sua senha no Presença Confirmada.\n\nAbra este link para criar uma nova senha:\n${resetUrl}\n\nEste link expira em 30 minutos. Se você não fez este pedido, ignore este e-mail.`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#332f2d"><h1 style="font-size:24px">Recuperar acesso</h1><p>Você pediu para redefinir sua senha no Presença Confirmada.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#716864;color:white;text-decoration:none;border-radius:10px">Criar nova senha</a></p><p style="font-size:13px;color:#746d68">Este link expira em 30 minutos. Se você não fez este pedido, ignore este e-mail.</p></div>`})});
-   if(!res.ok) { await run(env,'DELETE FROM auth_challenges WHERE id=?',challenge); fail(503,'Envio indisponível.'); }
+   let res;
+   try{
+    res=await (env.MAILER_FETCH||fetch)(env.MAILER_URL,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${env.MAILER_TOKEN}`},body:JSON.stringify({from:env.MAILER_FROM,to:[u.email],subject:'Recuperar acesso · Presença Confirmada',text:`Você pediu para redefinir sua senha no Presença Confirmada.\n\nAbra este link para criar uma nova senha:\n${resetUrl}\n\nEste link expira em 30 minutos. Se você não fez este pedido, ignore este e-mail.`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#332f2d"><h1 style="font-size:24px">Recuperar acesso</h1><p>Você pediu para redefinir sua senha no Presença Confirmada.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#716864;color:white;text-decoration:none;border-radius:10px">Criar nova senha</a></p><p style="font-size:13px;color:#746d68">Este link expira em 30 minutos. Se você não fez este pedido, ignore este e-mail.</p></div>`})});
+   }catch(error){
+    await run(env,'DELETE FROM auth_challenges WHERE id=?',challenge);
+    await integrationEvent(env,{studio_id:u.studio_id,provider:'resend',kind:'password_reset',external_id:challenge,status:'error',message:'Não foi possível conectar ao serviço de e-mail.',details:{stage:'request'},source_key:`resend:reset:${challenge}:error`}).catch(()=>{});
+    fail(503,'Envio indisponível.');
+   }
+   if(!res.ok) {
+    await run(env,'DELETE FROM auth_challenges WHERE id=?',challenge);
+    await integrationEvent(env,{studio_id:u.studio_id,provider:'resend',kind:'password_reset',external_id:challenge,status:'error',message:'O serviço de e-mail recusou o envio de recuperação.',details:{http_status:res.status},source_key:`resend:reset:${challenge}:error`}).catch(()=>{});
+    fail(503,'Envio indisponível.');
+   }
+   await integrationEvent(env,{studio_id:u.studio_id,provider:'resend',kind:'password_reset',external_id:challenge,status:'ok',message:'E-mail de recuperação enviado.',details:{},source_key:`resend:reset:${challenge}:ok`});
   }
   return json({ok:true,message:'Se houver uma conta e o envio estiver configurado, você receberá um link.'});
  }
@@ -93,7 +106,10 @@ export async function authRoutes(request,env,path) {
   const b=await body(request),pw=await passwordHash(b.password);
   const c=await stmt(env,"DELETE FROM auth_challenges WHERE kind='reset' AND challenge=? AND expires_at>? RETURNING user_id",await hash(text(b.token,100)),now()).first();
   if(!c) fail(400,'Link inválido ou expirado.');
-  await env.DB.batch([stmt(env,'UPDATE users SET password_hash=? WHERE id=?',pw,c.user_id),stmt(env,'DELETE FROM sessions WHERE user_id=?',c.user_id)]); return json({ok:true});
+  const target=await one(env,'SELECT studio_id FROM users WHERE id=?',c.user_id);
+  await env.DB.batch([stmt(env,'UPDATE users SET password_hash=? WHERE id=?',pw,c.user_id),stmt(env,'DELETE FROM sessions WHERE user_id=?',c.user_id)]);
+  await audit(env,target?.studio_id||null,c.user_id,'password_reset_complete');
+  return json({ok:true});
  }
  if(path==='/api/passkeys' && m==='GET') { const u=await session(request,env); return json({passkeys:await all(env,'SELECT id,label,created_at FROM passkeys WHERE user_id=?',u.id)}); }
  if(path.startsWith('/api/passkeys/') && m==='DELETE') { const u=await session(request,env); await run(env,'DELETE FROM passkeys WHERE id=? AND user_id=?',decodeURIComponent(path.split('/').pop()),u.id); return json({ok:true}); }

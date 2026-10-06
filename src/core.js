@@ -25,6 +25,13 @@ export function choice(value,values) { if(!values.includes(value)) fail(400,'Op�
 export function slug(value) { const v=text(value,64); if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v)||['api','app','admin','q','cliente','planos','termos','privacidade','media'].includes(v)) fail(400,'Use um endereço com letras minúsculas, números e hífens.'); return v; }
 export function date(value) { if(!value) return null; const d=new Date(value); if(!Number.isFinite(d.getTime())) fail(400,'Data inválida.'); return d.toISOString(); }
 export async function audit(env,studio,actor,action,details={}) { return run(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,?,?)',id(),studio??null,actor??null,action,JSON.stringify(details),now(),details.event_id??null,details.guest_id??null); }
+export async function integrationEvent(env,{studio_id=null,provider,kind,external_id=null,status='ok',message='',details={},source_key=null}) {
+ const cleanProvider=text(provider,40),cleanKind=text(kind,80),cleanStatus=choice(status,['ok','attention','error']);
+ const cleanMessage=text(message,500,false),cleanExternal=external_id===null||external_id===undefined?null:text(external_id,160,false);
+ const serialized=JSON.stringify(details&&typeof details==='object'&&!Array.isArray(details)?details:{});
+ if(serialized.length>4000) fail(400,'Detalhes operacionais muito grandes.');
+ return run(env,'INSERT OR IGNORE INTO integration_events(id,studio_id,provider,kind,external_id,status,message,details,source_key,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',id(),studio_id,cleanProvider,cleanKind,cleanExternal,cleanStatus,cleanMessage,serialized,source_key||null,now());
+}
 export async function limit(env,key,max=20) {
  const bucket=Math.floor(Date.now()/60000); const k=await hash(`${key}:${bucket}`);
  const row=await stmt(env,`INSERT INTO rate_limits VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET hits=hits+1 RETURNING hits`,k,bucket+2).first();

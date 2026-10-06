@@ -2,7 +2,7 @@ import {startRegistration,startAuthentication} from '@simplewebauthn/browser';
 import QRCode from 'qrcode';
 const app=document.querySelector('#app');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=c=>c?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(c/100):'Em breve';
+const money=c=>(c===null||c===undefined)?'Em breve':new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(c)/100);
 const labelStatus=value=>({
  active:'Ativo',inactive:'Inativo',archived:'Arquivado',
  pending:'Pendente',approved:'Aprovado',rejected:'Recusado',failed:'Falhou',cancelled:'Cancelado',
@@ -242,6 +242,7 @@ const menu=()=>{
  if(pureAdmin)return `<div class="app-nav-wrap admin-nav-wrap"><nav class="app-tabs admin-tabs" aria-label="Navegação administrativa">${item('/admin','Admin',p==='/admin')}${item('/admin/conta','Meu acesso',p==='/admin/conta')}</nav></div>`;
  return `<div class="app-nav-wrap"><nav class="app-tabs" aria-label="Navegação da plataforma">
   ${item('/app','Eventos',p==='/app'||p.startsWith('/app/eventos'))}
+  ${item('/app/modelos','Modelos',p==='/app/modelos')}
   ${item('/app/financeiro','Financeiro',p==='/app/financeiro')}
   ${item('/app/marca','Marca',p==='/app/marca')}
   ${item('/app/conta','Conta',p==='/app/conta')}
@@ -503,6 +504,95 @@ function bindRsvpModeSettings(formEl){
  };
  mode?.addEventListener('change',sync);sync();
 }
+function templateEditorFields(t={}){
+ const c=t.config||{},mode=c.rsvp_mode||'free',limit=c.max_people??'',a=parseObj(c.appearance),extra={...DEFAULT_EXTRA_FIELDS,...parseObj(c.extra_fields)},permissions={...DEFAULT_CLIENT_PERMISSIONS,...parseObj(c.client_permissions)},texts=parseObj(c.public_texts);
+ const listRules=`<div class="list-only-settings" ${mode==='list'?'':'hidden'}>${select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],c.list_behavior||'strict')}</div>`;
+ const peopleLimit=`<label class="people-limit-setting"><span class="field-label" id="people-limit-label">${mode==='list'?'Limite padrão por família':'Limite de pessoas · opcional'}${mode==='list'?'<b class="required-mark" aria-hidden="true">*</b>':''}</span><input name="max_people" type="number" min="1" max="100" value="${escape(limit)}" ${mode==='list'?'required aria-required="true"':''}><small class="field-hint" id="people-limit-hint">${mode==='list'?'Cada família respeita este teto.':'Deixe vazio para RSVP livre sem limite total.'}</small></label>`;
+ const extraFields=[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="extra_${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('');
+ const permissionFields=[['manage_guests','Gerenciar convidados'],['manage_appearance','Alterar aparência e mídias'],['manage_texts','Alterar textos públicos'],['view_messages','Ver mensagens'],['export_guests','Exportar lista e PDF'],['manage_event_details','Alterar dados do evento']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="perm_${k}" ${permissions[k]?'checked':''}> <span>${l}</span></label>`).join('');
+ const textFields=Object.entries({eyebrow:'Título pequeno',intro:'Introdução',yes_button:'Botão positivo',no_button:'Botão negativo',success_title:'Título após confirmar',success_message:'Mensagem após confirmar',decline_title:'Título após recusar',decline_message:'Mensagem após recusar'}).map(([k,l])=>field(`text_${k}`,l,'text',texts[k]||'',false)).join('');
+ return `${field('template_name','Nome do modelo','text',t.name||'')}
+ <div class="template-editor-section"><h3>RSVP e check-in</h3>${select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],mode)}${listRules}${peopleLimit}${select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],c.checkin_mode||'off')}</div>
+ <div class="template-editor-section"><h3>Campos opcionais</h3><div class="permission-list">${extraFields}</div></div>
+ <div class="template-editor-section"><h3>Painel da cliente</h3><div class="permission-list">${permissionFields}</div></div>
+ <div class="template-editor-section"><h3>Identidade reutilizável</h3><div class="settings-grid">${field('appearance_button_color','Cor principal','color',a.button_color||a.color||'#716864',false)}${field('appearance_background_color','Cor do fundo','color',a.background_color||'#f7f3f1',false)}${field('appearance_card_color','Cor do cartão','color',a.card_color||'#ffffff',false)}${field('appearance_text_color','Cor do texto','color',a.text_color||'#332f2d',false)}${select('appearance_font_style','Tipografia',[['modern','Moderna'],['elegant','Elegante'],['friendly','Infantil suave']],a.font_style||'modern')}${select('appearance_card_style','Estilo do cartão',[['soft','Suave'],['glass','Translúcido'],['solid','Sólido']],a.card_style||'soft')}</div><small class="field-hint">Mídias salvas no modelo continuam independentes. Aqui você edita apenas o estilo.</small></div>
+ <div class="template-editor-section"><h3>Conteúdo</h3><label><span class="field-label">Mensagem de boas-vindas</span><textarea name="welcome_message">${escape(c.welcome_message||'')}</textarea></label><details class="advanced-options"><summary>Textos personalizados</summary><div class="advanced-body">${textFields}</div></details></div>`;
+}
+
+function openTemplateEditor(template,done){
+ const current=template||{config:{}},isNew=!current.id;
+ const modal=openModal(isNew?'Novo modelo':'Editar modelo',`<p class="muted">Modelo é configuração reutilizável. Não consome crédito e nunca guarda convidados, respostas ou check-ins.</p>${form('template-editor',templateEditorFields(current),isNew?'Criar modelo':'Salvar modelo')}`);
+ const formEl=modal.querySelector('#template-editor');
+ bindRsvpModeSettings(formEl);
+ submit('template-editor',async(_,formNode)=>{
+  const fd=new FormData(formNode),base=current.config||{},baseAppearance=parseObj(base.appearance),extra_fields={},client_permissions={view:true},public_texts={...parseObj(base.public_texts)};
+  for(const k of Object.keys(DEFAULT_EXTRA_FIELDS))extra_fields[k]=fd.has(`extra_${k}`);
+  for(const k of Object.keys(DEFAULT_CLIENT_PERMISSIONS))if(k!=='view')client_permissions[k]=fd.has(`perm_${k}`);
+  for(const key of ['eyebrow','intro','yes_button','no_button','success_title','success_message','decline_title','decline_message'])public_texts[key]=String(fd.get(`text_${key}`)||'');
+  const maxRaw=fd.get('max_people');
+  const config={...base,
+   rsvp_mode:fd.get('rsvp_mode'),list_behavior:fd.get('list_behavior'),max_people:maxRaw===''?null:Number(maxRaw),checkin_mode:fd.get('checkin_mode'),
+   extra_fields,client_permissions,welcome_message:String(fd.get('welcome_message')||''),public_texts,
+   appearance:{...baseAppearance,button_color:fd.get('appearance_button_color'),color:fd.get('appearance_button_color'),background_color:fd.get('appearance_background_color'),card_color:fd.get('appearance_card_color'),text_color:fd.get('appearance_text_color'),font_style:fd.get('appearance_font_style'),card_style:fd.get('appearance_card_style')}
+  };
+  if(isNew)await api('/api/templates','POST',{name:fd.get('template_name'),config});
+  else await api(`/api/templates/${current.id}`,'PATCH',{name:fd.get('template_name'),config});
+  modal.closeModal();
+  notice(isNew?'Modelo criado sem consumir crédito.':'Modelo atualizado.');
+  if(done)await done();
+ });
+}
+
+function openUseTemplate(t){
+ const fields=field('title','Nome do evento')+field('event_date','Data e hora · opcional','datetime-local','',false)+field('location','Local · opcional','text','',false)+field('deadline','Prazo para confirmar · opcional','datetime-local','',false)+`<label><span class="field-label">Endereço do evento<b class="required-mark">*</b></span><input name="slug" required autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: <strong id="template-url-preview">seu-evento</strong></small></label>`;
+ const modal=openModal('Criar evento a partir do modelo',`<div class="template-use-note"><strong>${escape(t.name)}</strong><span>A nova festa será independente e só agora usará seu plano.</span></div>${form('template-use',fields,'Criar evento')}`);
+ bindAutoSlug('title','slug','template-url-preview');
+ submit('template-use',async b=>{
+  b.event_date=localToIso(b.event_date);
+  b.deadline=localToIso(b.deadline);
+  const {event}=await api(`/api/templates/${t.id}/use`,'POST',b);
+  modal.closeModal();
+  goto(`/app/eventos/${event.id}`);
+ });
+}
+
+function saveEventAsTemplate(base,e){
+ const modal=openModal('Salvar como modelo',`<p class="muted">Serão salvos regras, campos, textos, aparência, permissões e check-in. Convidados, respostas, QR, link da cliente, data, local e prazo ficam de fora.</p>${form('save-template-form',field('name','Nome do modelo','text',e.title),'Salvar modelo')}`);
+ submit('save-template-form',async b=>{
+  await api(`${base}/template`,'POST',{name:b.name});
+  modal.closeModal();
+  notice('Modelo salvo sem consumir crédito.');
+ });
+}
+
+async function modelsPage(){
+ const [{templates},{entitlement}]=await Promise.all([api('/api/templates'),api('/api/events/entitlement')]);
+ const canManage=user.role==='studio_owner'||user.role==='super_admin';
+ const cards=templates.map(t=>{
+  const c=t.config||{};
+  const mode=c.rsvp_mode==='list'?(c.list_behavior==='flexible'?'Lista flexível':'Lista fechada'):'Livre';
+  const check=({off:'Sem check-in',family:'QR por família',individual:'QR individual'}[c.checkin_mode||'off']);
+  const useAction=entitlement.can_create?`<button data-use-template="${t.id}">Usar em novo evento</button>`:'<a class="button" href="/app/financeiro">Liberar criação</a>';
+  const manage=canManage?`<button class="secondary" data-edit-template="${t.id}">Editar</button><button class="quiet-danger" data-delete-template="${t.id}">Excluir</button>`:'';
+  return `<article class="template-card"><div class="template-card-top"><span class="template-badge">MODELO</span><span>${Number(t.media_count||0)} mídia${Number(t.media_count||0)===1?'':'s'}</span></div><h2>${escape(t.name)}</h2><p>${escape(mode)} · ${escape(check)}</p><small>Atualizado em ${escape(formatDate(t.updated_at,true))}</small><div class="template-card-actions">${useAction}${manage}</div></article>`;
+ }).join('');
+ const empty=`<div class="empty-state"><div class="empty-mark">◇</div><h2>Nenhum modelo ainda</h2><p>Você pode criar um modelo do zero ou salvar as configurações de qualquer evento existente.</p>${canManage?'<button id="new-template-empty">Criar primeiro modelo</button>':''}</div>`;
+ app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">Biblioteca reutilizável</span><h1>Modelos de RSVP</h1><p>Guarde configurações que você usa sempre, sem transformar modelo em evento real.</p></div>${canManage?'<button id="new-template">+ Novo modelo</button>':''}</section><div class="template-info-strip"><strong>Modelos não consomem crédito.</strong><span>Crédito ou mensalidade só é usado quando um novo evento é criado a partir deles.</span></div><section class="content-section">${cards?`<div class="template-grid">${cards}</div>`:empty}</section>`;
+ menuEvents();
+ const byId=id=>templates.find(t=>t.id===id);
+ click('new-template',()=>openTemplateEditor(null,modelsPage));
+ click('new-template-empty',()=>openTemplateEditor(null,modelsPage));
+ document.querySelectorAll('[data-use-template]').forEach(btn=>btn.onclick=()=>openUseTemplate(byId(btn.dataset.useTemplate)));
+ document.querySelectorAll('[data-edit-template]').forEach(btn=>btn.onclick=()=>openTemplateEditor(byId(btn.dataset.editTemplate),modelsPage));
+ document.querySelectorAll('[data-delete-template]').forEach(btn=>btn.onclick=async()=>{
+  const t=byId(btn.dataset.deleteTemplate);
+  if(!confirm(`Excluir o modelo “${t.name}”? Eventos já criados não serão afetados.`))return;
+  await api(`/api/templates/${t.id}`,'DELETE',{});
+  notice('Modelo excluído.');
+  await modelsPage();
+ });
+}
+
 async function dashboard(){
  if(!user.studio){goto('/admin');return;}
  const archived=new URL(location.href).searchParams.get('arquivados')==='1';
@@ -522,13 +612,32 @@ async function dashboard(){
  menuEvents();if(entitlement.can_create)click('import-json',()=>openJsonImport());document.querySelectorAll('[data-restore-event]').forEach(btn=>btn.onclick=async()=>{await api(`/api/events/${btn.dataset.restoreEvent}/restore`,'POST',{});await dashboard();});
 }
 async function newEvent(){
- const {entitlement}=await api('/api/events/entitlement');
+ const [{entitlement},{templates}]=await Promise.all([api('/api/events/entitlement'),api('/api/templates')]);
  if(!entitlement.can_create){
-  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Libere a criação de eventos</h1><p>${escape(entitlement.reason)}</p></section><div class="card entitlement-paywall"><div class="paywall-mark">1</div><h2>Cada novo evento precisa estar coberto pelo seu plano</h2><p>Com créditos, 1 evento consome 1 crédito. Na mensalidade, você cria eventos enquanto ela estiver vigente.</p><a class="button primary full-button" href="/app/financeiro">Ir para planos e pagamentos</a><a class="button ghost full-button" href="/app">Voltar aos eventos</a></div>`;
+  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Libere a criação de eventos</h1><p>${escape(entitlement.reason)}</p></section><div class="card entitlement-paywall"><div class="paywall-mark">1</div><h2>Cada novo evento precisa estar coberto pelo seu plano</h2><p>Com créditos, 1 evento consome 1 crédito. Na mensalidade, você cria eventos enquanto ela estiver vigente.</p><a class="button primary full-button" href="/app/financeiro">Ir para planos e pagamentos</a><a class="button ghost full-button" href="/app/modelos">Ver meus modelos</a><a class="button ghost full-button" href="/app">Voltar aos eventos</a></div>`;
   menuEvents();return;
  }
- app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>${entitlement.mode==='credits'?`Este evento usará 1 dos seus ${entitlement.credits} crédito(s).`:'Sua mensalidade está vigente e cobre este novo evento.'}</p></section><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
- menuEvents();bindAutoSlug('title','slug','event-url-preview');bindRsvpModeSettings(document.querySelector('#event'));const hostPreview=document.querySelector('#studio-host-preview');if(hostPreview)hostPreview.textContent=new URL(tenantOrigin(user.studio.slug)).hostname;submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
+ let templatesHtml='';
+ if(templates.length){
+  const quick=templates.slice(0,6).map(t=>{
+   const check={off:'sem QR',family:'QR família',individual:'QR individual'}[t.config?.checkin_mode||'off'];
+   return `<button class="template-quick-card" data-new-template="${t.id}"><span>MODELO</span><strong>${escape(t.name)}</strong><small>${t.config?.rsvp_mode==='list'?'Lista':'Livre'} · ${escape(check)}</small></button>`;
+  }).join('');
+  templatesHtml=`<section class="new-event-templates"><div class="section-title"><div><span class="eyebrow">Começar mais rápido</span><h2>Usar um modelo</h2></div><a class="text-action" href="/app/modelos">Gerenciar modelos</a></div><div class="template-quick-grid">${quick}</div></section>`;
+ }
+ app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>${entitlement.mode==='credits'?`Este evento usará 1 dos seus ${entitlement.credits} crédito(s).`:'Sua mensalidade está vigente e cobre este novo evento.'}</p></section>${templatesHtml}<div class="section-divider"><span>ou comece do zero</span></div><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
+ menuEvents();
+ document.querySelectorAll('[data-new-template]').forEach(btn=>btn.onclick=()=>openUseTemplate(templates.find(t=>t.id===btn.dataset.newTemplate)));
+ bindAutoSlug('title','slug','event-url-preview');
+ bindRsvpModeSettings(document.querySelector('#event'));
+ const hostPreview=document.querySelector('#studio-host-preview');
+ if(hostPreview)hostPreview.textContent=new URL(tenantOrigin(user.studio.slug)).hostname;
+ submit('event',async b=>{
+  b.event_date=localToIso(b.event_date);
+  b.deadline=localToIso(b.deadline);
+  const {event}=await api('/api/events','POST',b);
+  goto(`/app/eventos/${event.id}`);
+ });
 }
 function guestQrEntries(g){
  if(g.qr_token)return [{name:g.group_label||g.name,token:g.qr_token}];
@@ -655,7 +764,7 @@ async function eventPage(eventId){
   content=`<section class="settings-workspace"><div class="card section-card"><span class="eyebrow">Evento</span><h2>Dados e regras do RSVP</h2><p class="muted">Defina tipo de confirmação, limites, prazo e check-in.</p>${form('settings',eventSettingsFields(e),'Salvar alterações')}</div>
   <div class="card section-card"><span class="eyebrow">Formulário</span><h2>Campos opcionais</h2><p class="muted">Escolha o que será perguntado além da presença e acompanhantes.</p>${form('extra-fields',`<div class="permission-list">${[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem carinhosa']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar campos')}</div>
   <div class="card section-card client-access-settings"><span class="eyebrow">Sua cliente</span><h2>Permissões do painel privado</h2><p class="muted">O link da cliente fica na aba <strong>Visão geral</strong>. Aqui você escolhe o que ela pode editar.</p>${form('client-permissions',`<div class="permission-list">${[['manage_guests','Adicionar e editar convidados'],['manage_appearance','Alterar aparência e mídias'],['manage_texts','Alterar textos públicos'],['view_messages','Ver mensagens dos convidados'],['export_guests','Exportar lista e PDF'],['manage_event_details','Alterar data, local e campos']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="${k}" ${permissions[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar permissões')}<a class="text-action" href="/app/eventos/${eventId}?tab=overview">Ver link da cliente</a></div>
-  <div class="card section-card"><span class="eyebrow">Ferramentas</span><h2>Gerenciamento do evento</h2><div class="tool-stack">${entitlement.can_create?'<button class="secondary" id="duplicate-event">Duplicar evento</button>':'<a class="button secondary" href="/app/financeiro">Comprar plano para duplicar</a>'}<button class="secondary" id="history">Histórico</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button><button class="secondary" id="pause-event">${e.status==='active'?'Pausar confirmações':'Reativar confirmações'}</button><button class="quiet-danger" id="archive-event">Arquivar evento</button></div></div></section>`;
+  <div class="card section-card"><span class="eyebrow">Ferramentas</span><h2>Gerenciamento do evento</h2><div class="tool-stack">${entitlement.can_create?'<button class="secondary" id="duplicate-event">Duplicar evento</button>':'<a class="button secondary" href="/app/financeiro">Comprar plano para duplicar</a>'}<button class="secondary" id="save-template">Salvar como modelo</button><button class="secondary" id="history">Histórico</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button><button class="secondary" id="pause-event">${e.status==='active'?'Pausar confirmações':'Reativar confirmações'}</button><button class="quiet-danger" id="archive-event">Arquivar evento</button></div></div></section>`;
  }
  app.innerHTML=menu()+header+content;
  menuEvents();
@@ -699,7 +808,7 @@ async function eventPage(eventId){
   submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');await eventPage(eventId);});
   submit('extra-fields',async(_,formEl)=>{const fd=new FormData(formEl);await api(base,'PATCH',{extra_fields:Object.fromEntries(['phone','dietary','notes','message'].map(k=>[k,fd.has(k)]))});notice('Campos atualizados.');});
   submit('client-permissions',async(_,formEl)=>{const fd=new FormData(formEl),body={view:true};for(const k of Object.keys(DEFAULT_CLIENT_PERMISSIONS))if(k!=='view')body[k]=fd.has(k);await api(base,'PATCH',{client_permissions:body});notice('Permissões da cliente salvas.');});
-  click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));if(entitlement.can_create)click('duplicate-event',async()=>{if(!confirm('Duplicar este evento? A cópia conta como um novo evento e usa seu plano vigente.'))return;const {event}=await api(`${base}/duplicate`,'POST',{});goto(`/app/eventos/${event.id}`);});click('pause-event',async()=>{await api(base,'PATCH',{status:e.status==='active'?'inactive':'active'});await eventPage(eventId);});click('archive-event',async()=>{if(!confirm('Arquivar este evento? O RSVP deixará de receber respostas.'))return;await api(`${base}/archive`,'POST',{});goto('/app');});click('history',()=>showHistory(base));
+  click('save-template',()=>saveEventAsTemplate(base,e));  click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));if(entitlement.can_create)click('duplicate-event',async()=>{if(!confirm('Duplicar este evento? Regras, textos, aparência e mídias serão copiados de forma independente. Data, local e prazo ficam em branco. A cópia usa seu plano vigente.'))return;const {event}=await api(`${base}/duplicate`,'POST',{});goto(`/app/eventos/${event.id}`);});click('pause-event',async()=>{await api(base,'PATCH',{status:e.status==='active'?'inactive':'active'});await eventPage(eventId);});click('archive-event',async()=>{if(!confirm('Arquivar este evento? O RSVP deixará de receber respostas.'))return;await api(`${base}/archive`,'POST',{});goto('/app');});click('history',()=>showHistory(base));
  }
 }
 function parseCSV(input){const rows=[[]];let current='',quoted=false;for(let i=0;i<input.length;i++){const c=input[i];if(c==='"'){if(quoted&&input[i+1]==='"'){current+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){rows.at(-1).push(current);current='';}else if(c==='\n'&&!quoted){rows.at(-1).push(current.replace(/\r$/,''));current='';rows.push([]);}else current+=c;}if(quoted)throw Error('CSV com aspas não fechadas.');rows.at(-1).push(current.replace(/\r$/,''));return rows;}
@@ -840,7 +949,7 @@ async function clientPage(raw){
  }
  if(tab==='guests'){
   content=`<section class="client-guests-section"><div class="section-row client-guest-actions"><div><h2>Convidados</h2></div><div class="row">${permissions.manage_guests?'<button class="secondary small" id="client-add">Adicionar família</button><button class="secondary small" id="client-bulk-add">Adicionar vários</button>':''}${permissions.export_guests?'<button class="secondary small" id="client-export">CSV</button><button class="secondary small" id="client-pdf">PDF</button>':''}</div></div>
-  <div class="guest-toolbar client-guest-toolbar"><input id="client-search" placeholder="Buscar convidado ou acompanhante"><div class="filter-chips"><button class="active" data-client-filter="">Todos <b>${guests.length}</b></button><button data-client-filter="yes">Confirmados <b>${guests.filter(g=>g.response_status==='yes').length}</b></button><button data-client-filter="pending">Pendentes <b>${guests.filter(g=>g.response_status==='pending').length}</b></button><button data-client-filter="no">Não irão <b>${guests.filter(g=>g.response_status==='no').length}</b></button></div></div>
+  <div class="guest-toolbar client-guest-toolbar"><input id="client-search" placeholder="Buscar convidado ou acompanhante"><div class="filter-chips"><button class="active" data-client-filter="">Todos <b>${guests.length}</b></button><button data-client-filter="yes">Confirmados <b>${guests.filter(g=>g.response_status==='yes').length}</b></button><button data-client-filter="pending">Pendentes <b>${guests.filter(g=>g.response_status==='pending').length}</b></button><button data-client-filter="no">Não irão <b>${guests.filter(g=>g.response_status==='no').length}</b></button><button data-client-filter="duplicates">Duplicados <b>${guests.filter(g=>g.possible_duplicate).length}</b></button></div></div>
   <div class="client-guest-list">${guests.map(g=>clientGuestCardHtml(g,permissions)).join('')||'<div class="empty-state compact"><p>Nenhum convidado cadastrado.</p></div>'}</div></section>`;
  }
  if(tab==='messages'){
@@ -950,25 +1059,94 @@ async function checkin(eventId){
  click('camera',async()=>{if(!('BarcodeDetector'in window))throw Error('Este navegador não oferece leitura automática. Use a busca manual ou cole o link do QR.');stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});const video=document.querySelector('#video');video.srcObject=stream;video.hidden=false;document.querySelector('#stop-camera').hidden=false;await video.play();running=true;const detector=new BarcodeDetector({formats:['qr_code']});const loop=async()=>{if(!running)return;try{const codes=await detector.detect(video);if(codes.length){await showPreview(codes[0].rawValue);return;}}catch{}setTimeout(loop,250);};loop();});
 }
 
+function adminCategoryLabel(value){
+ return ({paying:'Pagante',courtesy:'Cortesia',partner:'Parceira',test:'Teste',other:'Não classificada',suspended:'Suspensa'}[String(value)]||String(value||'Não classificada'));
+}
+
+function adminActionLabel(value){
+ return ({
+  create_event:'Evento criado',update_event:'Evento atualizado',duplicate_event:'Evento duplicado',create_event_from_template:'Evento criado por modelo',
+  template_created:'Modelo criado',template_updated:'Modelo atualizado',template_deleted:'Modelo excluído',
+  credit_adjustment:'Crédito ajustado',credit_purchase_granted:'Crédito liberado',payment_refunded:'Pagamento estornado',payment_chargeback:'Chargeback',
+  payment_status_changed:'Pagamento atualizado',subscription_payment_approved:'Mensalidade aprovada',subscription_cancelled:'Assinatura cancelada',subscription_paused:'Assinatura pausada',
+  cancel_subscription:'Cancelamento solicitado',studio_suspended:'Conta suspensa',studio_reactivated:'Conta reativada',
+  support_mode_enter:'Modo Suporte iniciado',support_mode_exit:'Modo Suporte encerrado',issue_reset_link:'Recuperação gerada',
+  admin_reconcile_billing:'Financeiro reconciliado',commercial_category_changed:'Classificação alterada',
+  password_reset_complete:'Senha redefinida',password_changed:'Senha alterada',logout_all_sessions:'Sessões encerradas'
+ }[String(value)]||String(value||'Ação'));
+}
+
+async function adminOpenStudio(studioId){
+ const b=await api(`/api/admin/studios/${studioId}`),s=b.studio,ownerUser=b.users.find(x=>x.role==='studio_owner'),brand=parseObj(s.brand),logo=safeHref(brand.logo_url||'');
+ const plan=s.billing_mode==='monthly'?(s.monthly_until?`Mensal vigente até ${formatDate(s.monthly_until)}`:'Mensal aguardando pagamento'):`Créditos · ${s.credits} disponível${s.credits===1?'':'is'}`;
+ const paymentRows=b.payments.slice(0,8).map(p=>`<div class="admin-mini-row"><div><strong>${money(p.amount_cents)}</strong><span>${formatDate(p.updated_at,true)}</span></div><span class="status-chip ${statusTone(p.status)}">${escape(labelStatus(p.status))}</span></div>`).join('');
+ const eventRows=b.events.slice(0,8).map(e=>`<div class="admin-mini-row"><div><strong>${escape(e.title)}</strong><span>${e.event_date?escape(formatDate(e.event_date)):'Sem data'} · ${e.guest_count} cadastro${Number(e.guest_count)===1?'':'s'}</span></div><span class="status-chip ${statusTone(e.status)}">${escape(labelStatus(e.status))}</span></div>`).join('');
+ const auditRows=b.audit.slice(0,10).map(a=>`<div class="admin-mini-row"><div><strong>${escape(adminActionLabel(a.action))}</strong><span>${escape(a.actor_name||'Sistema')} · ${formatDate(a.created_at,true)}</span></div></div>`).join('');
+ const categories=[['paying','Pagante'],['courtesy','Cortesia'],['partner','Parceira'],['test','Teste'],['other','Não classificada']];
+ const modal=openModal('Conta da conviteira',`<div class="admin-360-head">${logo?`<img src="${escape(logo)}" alt="">`:`<span class="admin-360-mark">${escape(String(s.name||'M').charAt(0).toUpperCase())}</span>`}<div><span class="eyebrow">${escape(adminCategoryLabel(s.display_category))}</span><h2>${escape(s.name)}</h2><p>${ownerUser?`${escape(ownerUser.name)} · ${escape(ownerUser.email)}`:'Responsável não localizado'}${s.whatsapp?` · ${escape(s.whatsapp)}`:''}</p></div></div>
+ <section class="admin-360-summary"><article><span>Plano</span><strong>${escape(plan)}</strong></article><article><span>Eventos</span><strong>${b.summary.active_events} ativos · ${b.summary.archived_events} arquivados</strong></article><article><span>Status</span><strong>${escape(labelStatus(s.status))}</strong></article><article><span>Último acesso</span><strong>Não estimado</strong><small>${escape(b.last_access_note)}</small></article></section>
+ <div class="admin-360-actions"><button id="admin-support">Acessar em Modo Suporte</button><button class="${s.status==='active'?'quiet-danger':'secondary'}" id="admin-toggle-status">${s.status==='active'?'Suspender conta':'Reativar conta'}</button><button class="secondary" id="admin-reset-access">Gerar recuperação</button><button class="secondary" id="admin-reconcile">Reconciliar financeiro</button></div><div id="admin-reset-result"></div>
+ <section class="two-column-panels admin-360-columns"><div class="card section-card"><h3>Classificação comercial</h3>${form('admin-category',select('commercial_category','Categoria',categories,s.commercial_category||'other'),'Salvar classificação')}</div><div class="card section-card"><h3>Ajuste de créditos</h3><p class="muted">Use valor positivo para adicionar e negativo para remover. Motivo obrigatório.</p>${form('admin-credit',field('delta','Quantidade','number')+field('reason','Motivo'),'Registrar ajuste')}</div></section>
+ <section class="admin-360-columns"><div class="card section-card"><h3>Pagamentos recentes</h3>${paymentRows||'<p class="muted">Nenhum pagamento registrado.</p>'}</div><div class="card section-card"><h3>Eventos recentes</h3>${eventRows||'<p class="muted">Nenhum evento.</p>'}</div></section>
+ <div class="card section-card"><h3>Histórico de ações</h3>${auditRows||'<p class="muted">Nenhuma ação registrada.</p>'}</div>`);
+ const reopen=async()=>{modal.closeModal();await adminOpenStudio(studioId);};
+ submit('admin-category',async form=>{await api(`/api/admin/studios/${studioId}`,'PATCH',{commercial_category:form.commercial_category});notice('Classificação atualizada.');await reopen();});
+ submit('admin-credit',async form=>{await api(`/api/admin/studios/${studioId}/credits`,'POST',{delta:Number(form.delta),reason:form.reason});notice('Ajuste registrado na auditoria.');await reopen();});
+ click('admin-toggle-status',async()=>{const next=s.status==='active'?'suspended':'active';if(next==='suspended'&&!confirm('Suspender esta conta? O acesso e os RSVPs públicos ficarão bloqueados até a reativação.'))return;await api(`/api/admin/studios/${studioId}`,'PATCH',{status:next});notice(next==='active'?'Conta reativada.':'Conta suspensa.');await reopen();});
+ click('admin-support',async()=>{await api('/api/admin/impersonate','POST',{studio_id:studioId});modal.closeModal();goto('/app');});
+ click('admin-reset-access',async()=>{
+  const x=await api(`/api/admin/studios/${studioId}/reset-link`,'POST',{});
+  const target=modal.querySelector('#admin-reset-result');
+  target.innerHTML=`<div class="admin-reset-box"><strong>Link temporário de recuperação</strong><input id="admin-reset-url" value="${escape(x.url)}" readonly><button class="secondary small" id="admin-copy-reset">Copiar link</button></div>`;
+  target.querySelector('#admin-copy-reset').onclick=async()=>{await navigator.clipboard.writeText(x.url);notice('Link copiado.');};
+ });
+ click('admin-reconcile',async()=>{if(!confirm('Reconciliar apenas estados comprovados pelos pagamentos já validados no sistema?'))return;const x=await api(`/api/admin/studios/${studioId}/reconcile`,'POST',{});notice(x.credits_fixed?`${x.credits_fixed} liberação de crédito corrigida.`:'Financeiro conferido sem saldo pendente.');await reopen();});
+}
+
 async function adminPage(){
  if(user.role!=='super_admin')throw Error('Acesso restrito à administração.');
- const {studios}=await api('/api/admin/studios'),active=studios.filter(s=>s.status==='active').length,totalEvents=studios.reduce((n,s)=>n+Number(s.event_count||0),0);
- const rows=studios.map(s=>`<tr data-studio="${escape(s.name.toLowerCase())}"><td><strong>${escape(s.name)}</strong><br><span class="status-chip ${statusTone(s.status)}">${escape(labelStatus(s.status))}</span></td><td>${escape(labelStatus(s.billing_mode))}<br><small>${s.credits} crédito${s.credits===1?'':'s'}</small></td><td>${s.event_count}</td><td><div class="table-actions"><button class="small" data-enter="${s.id}">Acessar</button><button class="secondary small" data-status="${s.id}" data-value="${s.status==='active'?'suspended':'active'}">${s.status==='active'?'Suspender':'Reativar'}</button><button class="secondary small" data-reset="${s.id}">Recuperar acesso</button></div></td></tr>`).join('');
- const cards=studios.map(s=>`<article class="admin-studio-card" data-studio="${escape((s.name+' '+(s.owner_name||'')+' '+(s.owner_email||'')).toLowerCase())}"><div class="admin-studio-head"><div><span class="admin-account-type">Conta de conviteira</span><strong>${escape(s.name)}</strong><small>${s.owner_name?`Responsável: ${escape(s.owner_name)} · `:''}${escape(labelStatus(s.billing_mode))} · ${s.credits} crédito${s.credits===1?'':'s'} · ${s.event_count} evento${Number(s.event_count)===1?'':'s'}</small></div><span class="status-chip ${statusTone(s.status)}">${escape(labelStatus(s.status))}</span></div><div class="admin-studio-actions"><button data-enter="${s.id}">Acessar como suporte</button><button class="secondary" data-status="${s.id}" data-value="${s.status==='active'?'suspended':'active'}">${s.status==='active'?'Suspender':'Reativar'}</button><button class="secondary" data-reset="${s.id}">Recuperar acesso</button></div></article>`).join('');
- app.innerHTML=menu()+`<section class="app-page-head admin-page-head"><div><span class="eyebrow">Administração da plataforma</span><h1>Visão da plataforma</h1><p>Contas de conviteiras, eventos, pagamentos e auditoria em um só lugar.</p></div><div class="admin-identity"><span>Seu acesso</span><strong>${escape(user.name)}</strong><small>Super Admin da Presença Confirmada</small></div></section><section class="summary-grid"><article><span>Contas</span><strong>${studios.length}</strong><small>cadastradas</small></article><article><span>Ativas</span><strong>${active}</strong><small>em operação</small></article><article><span>Eventos</span><strong>${totalEvents}</strong><small>criados</small></article></section><div class="card section-card"><div class="section-row"><div><h2>Contas de conviteiras</h2><p>Estas são contas clientes da plataforma. Acessar uma delas inicia um modo de suporte temporário.</p></div></div><input id="studio-search" placeholder="Buscar marca" aria-label="Buscar marca"><div class="admin-studio-mobile">${cards}</div><div class="admin-studio-table scroll"><table><thead><tr><th>Marca</th><th>Plano</th><th>Eventos</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div><div id="reset-link" class="admin-link"></div></div><section class="two-column-panels"><div class="card section-card"><h2>Ajuste de créditos</h2><p class="muted">Todo ajuste manual fica registrado na auditoria.</p>${form('adjust',select('studio_id','Conviteira',studios.map(s=>[s.id,s.name]),studios[0]?.id)+field('delta','Quantidade','number')+field('reason','Motivo do ajuste'),'Aplicar ajuste')}</div><div class="card section-card"><h2>Relatórios rápidos</h2><p class="muted">Consulte dados globais sem entrar em cada conta.</p><div class="admin-report-actions"><button id="global-finances">Financeiro</button><button class="secondary" id="global-events">Eventos</button><button class="secondary" id="audit">Auditoria</button></div><div id="admin-result"></div></div></section>`;
+ const [{studios},overview]=await Promise.all([api('/api/admin/studios'),api('/api/admin/overview')]);
+ const allowed=['overview','accounts','finance','usage','health','audit'],requested=new URL(location.href).searchParams.get('tab'),tab=allowed.includes(requested)?requested:'overview';
+ const finance=overview.finance,rec=finance.recurring,usage=overview.usage,exceptions=overview.exceptions||[],active=studios.filter(s=>s.status==='active').length,totalEvents=studios.reduce((n,s)=>n+Number(s.event_count||0),0);
+ const tabLink=(key,label)=>`<a class="${tab===key?'active':''}" href="/admin?tab=${key}">${label}</a>`;
+ const header=menu()+`<section class="app-page-head admin-page-head"><div><span class="eyebrow">Administração da plataforma</span><h1>Presença Confirmada</h1><p>Negócio, contas e operação sem misturar seu acesso com uma conviteira.</p></div><div class="admin-identity"><span>Seu acesso</span><strong>${escape(user.name)}</strong><small>Super Admin</small></div></section><nav class="admin-section-tabs">${tabLink('overview','Visão geral')}${tabLink('accounts','Contas')}${tabLink('finance','Financeiro')}${tabLink('usage','Uso do produto')}${tabLink('health','Saúde')}${tabLink('audit','Auditoria')}</nav>`;
+ let content='';
+ if(tab==='overview'){
+  const problemPayments=exceptions.filter(x=>['credit_missing','duplicate_payment','subscription_inconsistent','payment_stuck','refunded','charged_back'].includes(x.type)).length;
+  const exceptionHtml=exceptions.length?exceptions.slice(0,12).map(x=>`<article class="exception-card ${x.severity}"><div><span>${x.severity==='error'?'AÇÃO NECESSÁRIA':'ATENÇÃO'}</span><strong>${escape(x.title)}</strong><p>${escape(x.detail)}</p></div>${x.studio_id?`<button class="secondary small" data-admin-studio="${x.studio_id}">Abrir conta</button>`:''}</article>`).join(''):'<div class="empty-state compact"><div class="empty-mark">✓</div><h3>Nada crítico agora</h3><p>Não há exceção acionável detectada com os dados atuais.</p></div>';
+  content=`<section class="summary-grid admin-kpi-grid"><article><span>Receita do mês</span><strong>${money(finance.month.revenue_cents)}</strong><small>${finance.month.change_percent===null?'sem base anterior':`${finance.month.change_percent>=0?'+':''}${finance.month.change_percent}% vs. mês anterior`}</small></article><article><span>MRR atual</span><strong>${money(rec.mrr_cents)}</strong><small>${rec.active_subscriptions} mensalidade${rec.active_subscriptions===1?'':'s'} ativa${rec.active_subscriptions===1?'':'s'}</small></article><article><span>Contas pagantes</span><strong>${finance.paying_accounts}</strong><small>com pagamento ou mensal ativa</small></article><article><span>Pagamentos com problema</span><strong>${problemPayments}</strong><small>exceções financeiras acionáveis</small></article></section>
+  <section class="card section-card attention-panel"><div class="section-row"><div><span class="eyebrow">Precisa da sua atenção</span><h2>Exceções acionáveis</h2><p>Só entra aqui o que merece uma decisão ou correção.</p></div><a class="text-action" href="/admin?tab=health">Ver saúde técnica</a></div><div class="exception-list">${exceptionHtml}</div></section>
+  <section class="two-column-panels"><div class="card section-card"><h2>Este mês</h2><div class="metric-list"><div><span>Mês anterior</span><strong>${money(finance.month.previous_revenue_cents)}</strong></div><div><span>Vendas por créditos</span><strong>${money(finance.month.credit_sales_cents)}</strong></div><div><span>Vendas por assinatura</span><strong>${money(finance.month.subscription_sales_cents)}</strong></div><div><span>Ticket médio</span><strong>${money(finance.month.average_ticket_cents)}</strong></div><div><span>Estornos / contestações</span><strong>${money(finance.month.refunds_cents)}</strong></div></div></div><div class="card section-card"><h2>Plataforma</h2><div class="metric-list"><div><span>Contas cadastradas</span><strong>${studios.length}</strong></div><div><span>Contas ativas</span><strong>${active}</strong></div><div><span>Eventos criados</span><strong>${totalEvents}</strong></div><div><span>Eventos neste mês</span><strong>${usage.events_created_month}</strong></div><div><span>Contas ativas em 30 dias</span><strong>${usage.active_accounts_30d}</strong></div></div></div></section>`;
+ }
+ if(tab==='accounts'){
+  const cards=studios.map(s=>`<article class="admin-studio-card" data-studio-search="${escape((s.name+' '+(s.owner_name||'')+' '+(s.owner_email||'')+' '+(s.display_category||'')).toLowerCase())}"><div class="admin-studio-head"><div><span class="admin-account-type">${escape(adminCategoryLabel(s.display_category))}</span><strong>${escape(s.name)}</strong><small>${s.owner_name?`Responsável: ${escape(s.owner_name)} · `:''}${escape(labelStatus(s.billing_mode))} · ${s.credits} crédito${s.credits===1?'':'s'}</small></div><span class="status-chip ${statusTone(s.status)}">${escape(labelStatus(s.status))}</span></div><div class="admin-account-facts"><span>${s.active_event_count} ativos</span><span>${s.archived_event_count} arquivados</span><span>${s.event_count} total</span></div><button data-admin-studio="${s.id}">Abrir visão 360º</button></article>`).join('');
+  content=`<section class="card section-card"><div class="section-row"><div><h2>Contas de conviteiras</h2><p>Marca, plano, situação e suporte num único ponto.</p></div><span class="soft-chip">${studios.length} contas</span></div><input id="studio-search" placeholder="Buscar marca, responsável ou e-mail" aria-label="Buscar conta"><div class="admin-account-grid">${cards||'<div class="empty-state compact"><p>Nenhuma conta de conviteira.</p></div>'}</div></section>`;
+ }
+ if(tab==='finance'){
+  const financeData=await api('/api/admin/financeiro'),max=Math.max(1,...rec.evolution.map(x=>Number(x.amount_cents||0)));
+  const evolution=rec.evolution.map(x=>`<div class="revenue-bar-row"><span>${escape(x.month)}</span><div><i style="width:${Math.round(Number(x.amount_cents||0)/max*100)}%"></i></div><strong>${money(x.amount_cents)}</strong></div>`).join('');
+  const recent=financeData.payments.slice(0,30).map(p=>`<div class="admin-payment-row"><div><strong>${escape(p.studio_name)}</strong><span>${p.kind==='monthly'?'Mensal':'Créditos'} · ${formatDate(p.updated_at,true)}</span></div><strong>${money(p.amount_cents)}</strong><span class="status-chip ${statusTone(p.status)}">${escape(labelStatus(p.status))}</span></div>`).join('');
+  content=`<section class="summary-grid admin-kpi-grid"><article><span>Receita do mês</span><strong>${money(finance.month.revenue_cents)}</strong><small>${finance.month.approved_payments} pagamento${finance.month.approved_payments===1?'':'s'} aprovado${finance.month.approved_payments===1?'':'s'}</small></article><article><span>MRR</span><strong>${money(rec.mrr_cents)}</strong><small>projeção das mensalidades ativas</small></article><article><span>Novas assinaturas</span><strong>${rec.new_subscriptions}</strong><small>no mês</small></article><article><span>Renovações</span><strong>${rec.renewals}</strong><small>${rec.cancellations} cancelamento${rec.cancellations===1?'':'s'}</small></article></section>
+  <section class="two-column-panels"><div class="card section-card"><h2>Distribuição do mês</h2><div class="metric-list"><div><span>Créditos</span><strong>${money(finance.month.credit_sales_cents)}</strong></div><div><span>Assinaturas</span><strong>${money(finance.month.subscription_sales_cents)}</strong></div><div><span>Ticket médio</span><strong>${money(finance.month.average_ticket_cents)}</strong></div><div><span>Estornos / chargebacks</span><strong>${money(finance.month.refunds_cents)}</strong></div></div><p class="field-hint">${escape(finance.note)}</p></div><div class="card section-card"><h2>Receita recorrente registrada</h2><div class="revenue-bars">${evolution}</div></div></section>
+  <div class="card section-card"><div class="section-row"><div><h2>Movimentos recentes</h2><p>Pagamentos já registrados pela plataforma.</p></div></div><div class="admin-payment-list">${recent||'<p class="muted">Nenhum pagamento registrado.</p>'}</div></div>`;
+ }
+ if(tab==='usage'){
+  const modes=usage.rsvp||{},features=usage.features||{},featureRows=[['RSVP Livre',Number(modes.free||0)],['RSVP por Lista',Number(modes.list||0)],['Lista flexível',features.flexible_list],['QR / check-in ativo',features.qr_checkin],['Eventos com mídia',features.custom_media],['Mensagens recebidas',features.messages],['Eventos com ações da cliente',features.client_panel_actions]].sort((a,b)=>b[1]-a[1]);
+  content=`<section class="summary-grid admin-kpi-grid"><article><span>Contas ativas</span><strong>${usage.active_accounts_30d}</strong><small>com atividade do produto em 30 dias</small></article><article><span>Eventos no mês</span><strong>${usage.events_created_month}</strong><small>novos eventos</small></article><article><span>Média por conviteira</span><strong>${usage.average_events_per_studio}</strong><small>eventos por conta</small></article><article><span>Média de convidados</span><strong>${usage.average_guests_per_event}</strong><small>cadastros por evento</small></article></section><div class="card section-card"><h2>Uso das funcionalidades</h2><p class="muted">Leitura feita a partir de dados que o produto já gera, sem tracking invasivo de navegação.</p><div class="feature-usage-grid">${featureRows.map(([label,value],i)=>`<div class="feature-usage-row"><span>${i===0?'Mais usado · ':''}${escape(label)}</span><strong>${Number(value||0)}</strong></div>`).join('')}</div></div>`;
+ }
+ if(tab==='health'){
+  const {services}=await api('/api/admin/health');
+  const stateLabel={operational:'Operacional',attention:'Atenção',error:'Erro'};
+  content=`<section class="card section-card"><div class="section-row"><div><h2>Saúde técnica</h2><p>Leitura humana, sem tokens, chaves ou stack traces.</p></div></div><div class="health-grid">${services.map(x=>`<article class="health-card ${x.state}"><div><strong>${escape(x.label)}</strong><span class="health-state">${escape(stateLabel[x.state]||x.state)}</span></div><p>${escape(x.message)}</p></article>`).join('')}</div></section>`;
+ }
+ if(tab==='audit'){
+  const {audit}=await api('/api/admin/audit');
+  content=`<section class="card section-card"><div class="section-row"><div><h2>Auditoria</h2><p>Ações relevantes da plataforma, sem senha, token ou secret.</p></div><span class="soft-chip">últimos ${Math.min(audit.length,1000)}</span></div><div class="audit-list admin-audit-list">${audit.length?audit.slice(0,250).map(x=>`<div><div><strong>${escape(adminActionLabel(x.action))}</strong><span>${escape(x.studio_name||'Plataforma')} · ${escape(x.actor_name||'Sistema')}</span></div><time>${formatDate(x.created_at,true)}</time></div>`).join(''):'<p class="muted">Nenhuma ação registrada.</p>'}</div></section>`;
+ }
+ app.innerHTML=header+content;
  menuEvents();
- submit('adjust',async b=>{await api(`/api/admin/studios/${b.studio_id}/credits`,'POST',b);await adminPage();});
- document.querySelector('#studio-search')?.addEventListener('input',ev=>document.querySelectorAll('[data-studio]').forEach(row=>row.hidden=!row.dataset.studio.includes(ev.target.value.toLowerCase())));
- document.querySelectorAll('[data-enter]').forEach(btn=>btn.addEventListener('click',async()=>{try{await api('/api/admin/impersonate','POST',{studio_id:btn.dataset.enter});goto('/app');}catch(e){notice(e.message);}}));
- document.querySelectorAll('[data-status]').forEach(btn=>btn.addEventListener('click',async()=>{try{await api(`/api/admin/studios/${btn.dataset.status}`,'PATCH',{status:btn.dataset.value});await adminPage();}catch(e){notice(e.message);}}));
- document.querySelectorAll('[data-reset]').forEach(btn=>btn.addEventListener('click',async()=>{try{const b=await api(`/api/admin/studios/${btn.dataset.reset}/reset-link`,'POST',{});const target=document.querySelector('#reset-link');target.innerHTML=`<strong>Link temporário de recuperação</strong><input value="${escape(b.url)}" readonly>`;target.querySelector('input').select();}catch(e){notice(e.message);}}));
- const renderReport=(type,b)=>{
-  const el=document.querySelector('#admin-result');
-  if(type==='financeiro'){el.innerHTML=b.orders?.length?`<div class="scroll report-table"><table><thead><tr><th>Marca</th><th>Data</th><th>Plano</th><th>Valor</th><th>Status</th></tr></thead><tbody>${b.orders.slice(0,100).map(o=>`<tr><td>${escape(o.studio_name)}</td><td>${formatDate(o.created_at)}</td><td>${o.kind==='monthly'?'Mensal':`${o.quantity} créditos`}</td><td>${money(o.amount_cents)}</td><td>${escape(labelStatus(o.status))}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nenhuma compra registrada.</p>';return;}
-  if(type==='events'){el.innerHTML=b.events?.length?`<div class="scroll report-table"><table><thead><tr><th>Marca</th><th>Evento</th><th>Data</th><th>Status</th></tr></thead><tbody>${b.events.slice(0,100).map(x=>`<tr><td>${escape(x.studio_name)}</td><td>${escape(x.title)}</td><td>${formatDate(x.event_date)}</td><td>${escape(labelStatus(x.status))}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Nenhum evento registrado.</p>';return;}
-  el.innerHTML=b.audit?.length?`<div class="audit-list">${b.audit.slice(0,100).map(x=>`<div><strong>${escape(x.action)}</strong><span>${formatDate(x.created_at,true)}</span></div>`).join('')}</div>`:'<p class="muted">Nenhum registro de auditoria.</p>';
- };
- for(const [button,path]of [['global-finances','financeiro'],['global-events','events'],['audit','audit']])click(button,async()=>renderReport(path,await api(`/api/admin/${path}`)));
+ document.querySelector('#studio-search')?.addEventListener('input',ev=>document.querySelectorAll('[data-studio-search]').forEach(row=>row.hidden=!row.dataset.studioSearch.includes(ev.target.value.toLowerCase())));
+ document.querySelectorAll('[data-admin-studio]').forEach(btn=>btn.onclick=()=>adminOpenStudio(btn.dataset.adminStudio));
 }
 
 async function main(){
@@ -1005,6 +1183,7 @@ async function main(){
  if(path==='/admin')return adminPage();
  if(path==='/admin/conta')return account(true);
  if(path==='/app')return dashboard();
+ if(path==='/app/modelos')return modelsPage();
  if(path==='/app/financeiro')return finances();
  if(path==='/app/marca')return brand();
  if(path==='/app/conta')return account();

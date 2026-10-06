@@ -2,16 +2,17 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import worker from '../src/index.js';
 export class D1 {
- constructor(){this.db=new DatabaseSync(':memory:');for(const file of ['0001_commercial.sql','0002_original_feature_parity.sql','0003_optional_people_limits.sql'])this.db.exec(readFileSync(new URL(`../migrations/${file}`,import.meta.url),'utf8'));}
+ constructor(){this.db=new DatabaseSync(':memory:');for(const file of ['0001_commercial.sql','0002_original_feature_parity.sql','0003_optional_people_limits.sql','0004_v3_gap_package.sql'])this.db.exec(readFileSync(new URL(`../migrations/${file}`,import.meta.url),'utf8'));}
  prepare(sql){const db=this.db;return {args:[],bind(...args){this.args=args;return this;},async first(){return db.prepare(sql).get(...this.args)||null;},async all(){return {results:db.prepare(sql).all(...this.args)};},async run(){const result=db.prepare(sql).run(...this.args);return {success:true,meta:{changes:Number(result.changes)}};}};}
  async batch(queries){this.db.exec('BEGIN');try{const results=[];for(const q of queries)results.push(await q.run());this.db.exec('COMMIT');return results;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
 export function fixture(){
  const mediaStore=new Map();
- const env={DB:new D1(),APP_ORIGIN:'https://rsvp.example',RP_ID:'rsvp.example',MP_ACCESS_TOKEN:'test-only',MP_WEBHOOK_SECRET:'test-secret',MP_COLLECTOR_ID:'123',MONTHLY_CENTS:'2990',CREDIT_1_CENTS:'990',CREDIT_5_CENTS:'3990',CREDIT_10_CENTS:'6990',GRACE_DAYS:'0',ASSETS:{fetch:async()=>new Response('static')},MEDIA:{
+ const env={DB:new D1(),APP_ORIGIN:'https://rsvp.example',RP_ID:'rsvp.example',MP_ACCESS_TOKEN:'test-only',MP_WEBHOOK_SECRET:'test-secret',MP_COLLECTOR_ID:'123',MONTHLY_CENTS:'2990',CREDIT_1_CENTS:'1490',CREDIT_5_CENTS:'6490',CREDIT_10_CENTS:'10990',GRACE_DAYS:'0',ASSETS:{fetch:async()=>new Response('static')},MEDIA:{
   async put(key,value,options={}){mediaStore.set(key,{bytes:value instanceof ArrayBuffer?value:value.buffer,httpMetadata:options.httpMetadata||{},httpEtag:'test-etag'});},
   async get(key){const item=mediaStore.get(key);return item?{body:item.bytes,httpMetadata:item.httpMetadata,httpEtag:item.httpEtag}:null;},
-  async delete(key){mediaStore.delete(key);}
+  async delete(key){mediaStore.delete(key);},
+  async list(){return {objects:[...mediaStore.keys()].slice(0,1).map(key=>({key}))};}
  }};
  const calls=[],resources=new Map();let sequence=0;
  env.MP_FETCH=async(url,options)=>{
@@ -27,4 +28,4 @@ export function fixture(){
  const exec=(query,...args)=>env.DB.db.prepare(query).run(...args);
  return {env,request,register,webhook,resources,calls,sql,exec,mediaStore};
 }
-export const approved=(id,order,amount=9.9)=>({id,external_reference:order,collector_id:123,currency_id:'BRL',transaction_amount:amount,status:'approved',transaction_amount_refunded:0});
+export const approved=(id,order,amount=14.9)=>({id,external_reference:order,collector_id:123,currency_id:'BRL',transaction_amount:amount,status:'approved',transaction_amount_refunded:0});
