@@ -1,2 +1,2 @@
-final production deploy
-source_head=693baf044873fca3e41da16e6fd396ee6c642675
+trigger guarded final production release
+source_head=12289267b762847765d72521bb0fac4133145ced
