@@ -110,7 +110,7 @@ async function exceptionsOverview(env){
  return items.slice(0,100);
 }
 
-async function healthOverview(env){
+async function healthOverview(env,request){
  const services=[];
  const push=(key,label,state,message)=>services.push({key,label,state,message});
  push('app','Aplicação','operational','A área administrativa respondeu normalmente.');
@@ -121,24 +121,29 @@ async function healthOverview(env){
  }catch{push('r2','R2','error','O armazenamento de mídias não respondeu.');}
  try{await mp(env,'/users/me');push('mercadopago','Mercado Pago','operational','Credencial e API responderam.');}
  catch{push('mercadopago','Mercado Pago','error','Não foi possível validar a comunicação com o Mercado Pago.');}
- const mpRecent=await one(env,"SELECT status,message,created_at FROM integration_events WHERE provider='mercadopago' ORDER BY created_at DESC LIMIT 1");
- if(!mpRecent)push('mp_webhooks','Webhooks do Mercado Pago','attention','Ainda não há entrega recente registrada para confirmar o fluxo.');
- else push('mp_webhooks','Webhooks do Mercado Pago',mpRecent.status==='error'?'error':'operational',mpRecent.status==='error'?(mpRecent.message||'A última entrega registrada falhou.'):'A última entrega registrada foi processada.');
+ const mpRecent=await one(env,"SELECT status,message,created_at FROM integration_events WHERE provider='mercadopago' ORDER BY created_at DESC LIMIT 1"),
+  anyPayment=await one(env,"SELECT 1 ok FROM payments LIMIT 1");
+ if(!env.MP_WEBHOOK_SECRET)push('mp_webhooks','Webhooks do Mercado Pago','attention','Webhook ainda não está completamente configurado no Worker.');
+ else if(mpRecent)push('mp_webhooks','Webhooks do Mercado Pago',mpRecent.status==='error'?'error':'operational',mpRecent.status==='error'?(mpRecent.message||'A última entrega registrada falhou.'):'A última entrega registrada foi processada.');
+ else if(!anyPayment)push('mp_webhooks','Webhooks do Mercado Pago','operational','Webhook configurado. Ainda não houve pagamento real para exercitar esse fluxo.');
+ else push('mp_webhooks','Webhooks do Mercado Pago','attention','Há pagamento registrado, mas ainda não há entrega de webhook registrada para confirmar o fluxo.');
  const resendConfigured=!!(env.MAILER_URL&&env.MAILER_FROM&&env.MAILER_TOKEN),mailRecent=await one(env,"SELECT status,message,created_at FROM integration_events WHERE provider='resend' ORDER BY created_at DESC LIMIT 1");
  if(!resendConfigured)push('resend','Resend','attention','Envio de recuperação ainda não está completamente configurado no Worker.');
  else if(mailRecent?.status==='error')push('resend','Resend','error',mailRecent.message||'O último envio registrado falhou.');
  else if(mailRecent?.status==='ok')push('resend','Resend','operational','Configuração presente e há envio concluído registrado.');
  else push('resend','Resend','attention','Configuração presente, mas ainda não há envio real concluído registrado.');
- const healthFetch=env.HEALTH_FETCH||fetch;
- try{const r=await healthFetch(`${env.APP_ORIGIN}/api/plans`,{signal:AbortSignal.timeout(6000)});push('domain','Domínio principal',r.ok?'operational':'error',r.ok?'Domínio principal respondeu.':'Domínio principal respondeu com erro.');}
- catch{push('domain','Domínio principal','error','Não foi possível alcançar o domínio principal.');}
- const studio=await one(env,"SELECT slug FROM studios WHERE status='active' ORDER BY created_at LIMIT 1");
- if(!studio)push('wildcard','Wildcard das conviteiras','attention','Não há conviteira ativa para testar o subdomínio.');
- else{
-  const host=new URL(env.APP_ORIGIN).hostname.toLowerCase(),hml=host.includes('hml.presencaconfirmada.com.br'),origin=`https://${studio.slug}${hml?'.hml':''}.presencaconfirmada.com.br`;
-  try{const r=await healthFetch(`${origin}/api/plans`,{signal:AbortSignal.timeout(6000)});push('wildcard','Wildcard das conviteiras',r.ok?'operational':'error',r.ok?'Subdomínio de conviteira respondeu.':'Subdomínio de conviteira respondeu com erro.');}
-  catch{push('wildcard','Wildcard das conviteiras','error','Não foi possível alcançar um subdomínio de conviteira.');}
- }
+
+ let requestOrigin='';
+ try{requestOrigin=new URL(request.url).origin;}catch{}
+ if(requestOrigin===String(env.APP_ORIGIN||''))push('domain','Domínio principal','operational','Você está acessando o painel pelo domínio principal e esta verificação respondeu normalmente.');
+ else push('domain','Domínio principal','attention','O painel respondeu, mas esta chamada não veio pelo domínio principal configurado.');
+
+ const studio=await one(env,"SELECT slug FROM studios WHERE status='active' ORDER BY created_at LIMIT 1"),
+  wildcardSmoke=await one(env,"SELECT status,message,created_at FROM integration_events WHERE provider='platform' AND kind='wildcard_smoke' ORDER BY created_at DESC LIMIT 1");
+ if(!studio)push('wildcard','Wildcard das conviteiras','attention','Não há conviteira ativa para validar o wildcard.');
+ else if(wildcardSmoke?.status==='error')push('wildcard','Wildcard das conviteiras','error',wildcardSmoke.message||'O último smoke externo do wildcard falhou.');
+ else if(wildcardSmoke?.status==='ok')push('wildcard','Wildcard das conviteiras','operational',wildcardSmoke.message||'Wildcard validado externamente no último deploy.');
+ else push('wildcard','Wildcard das conviteiras','attention','Wildcard configurado, mas ainda não há smoke externo registrado neste ambiente.');
  return services;
 }
 
@@ -168,7 +173,7 @@ export async function adminRoutes(request,env,path) {
  const u=await session(request,env); admin(u); const method=request.method;
 
  if(path==='/api/admin/overview'&&method==='GET')return json({finance:await financeOverview(env),usage:await usageOverview(env),exceptions:await exceptionsOverview(env)});
- if(path==='/api/admin/health'&&method==='GET')return json({services:await healthOverview(env)});
+ if(path==='/api/admin/health'&&method==='GET')return json({services:await healthOverview(env,request)});
  if(path==='/api/admin/exceptions'&&method==='GET')return json({exceptions:await exceptionsOverview(env)});
  if(path==='/api/admin/studios' && method==='GET') return json({studios:await all(env,`SELECT s.*,
   (SELECT COUNT(*) FROM events e WHERE e.studio_id=s.id) event_count,
