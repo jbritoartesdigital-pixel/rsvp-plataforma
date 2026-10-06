@@ -361,33 +361,53 @@ function parseMemberLines(value){
 }
 function mediaUrl(id){return `/media/${id}`;}
 function appearanceFields(a){
- const number=(name,label,value,min,max,step)=>`<label><span class="field-label">${label}</span><input name="${name}" type="number" min="${min}" max="${max}" step="${step}" value="${escape(value)}"></label>`;
- return `<div class="settings-grid">
-  ${field('button_color','Cor principal','color',a.button_color||a.color,false)}
-  ${field('button_text_color','Texto do botão','color',a.button_text_color,false)}
-  ${field('background_color','Cor do fundo','color',a.background_color,false)}
-  ${field('card_color','Cor do cartão','color',a.card_color,false)}
-  ${field('text_color','Cor do texto','color',a.text_color,false)}
-  ${field('muted_color','Texto secundário','color',a.muted_color,false)}
-  ${field('overlay_color','Cor da sobreposição','color',a.overlay_color,false)}
-  ${select('card_style','Estilo do cartão',[['soft','Suave'],['glass','Vidro'],['solid','Sólido']],a.card_style)}
-  ${select('card_width','Largura do cartão',[['narrow','Estreito'],['medium','Médio'],['wide','Largo']],a.card_width)}
-  ${select('font_style','Tipografia',[['modern','Moderna'],['elegant','Elegante'],['friendly','Amigável']],a.font_style)}
-  ${select('background_position','Posição vertical',[['center','Centro'],['top','Topo'],['bottom','Base']],a.background_position)}
-  ${select('background_x','Posição horizontal',[['left','Esquerda'],['center','Centro'],['right','Direita']],a.background_x)}
-  ${number('overlay_opacity','Opacidade do fundo',a.overlay_opacity,0,1,.05)}
-  ${number('card_opacity','Opacidade do cartão',a.card_opacity,0.55,1,.05)}
-  ${number('card_blur','Desfoque do cartão',a.card_blur,0,30,1)}
-  ${number('card_radius','Arredondamento',a.card_radius,0,40,1)}
-  ${select('interface_language','Idioma do convidado',[['pt-BR','Português'],['en','English']],a.interface_language)}
+ const number=(name,label,value,min,max,step)=>\`<label><span class="field-label">\${label}</span><input name="\${name}" type="number" min="\${min}" max="\${max}" step="\${step}" value="\${escape(value)}"></label>\`;
+ return \`<div class="appearance-editor-sections">
+  <section class="appearance-group">
+   <div class="appearance-group-head"><span>01</span><div><strong>Fundo</strong><small>Cor, posição e sobreposição da mídia.</small></div></div>
+   <div class="settings-grid">
+    \${field('background_color','Cor do fundo','color',a.background_color,false)}
+    \${field('overlay_color','Cor da sobreposição','color',a.overlay_color,false)}
+    \${select('background_position','Posição vertical',[['center','Centro'],['top','Topo'],['bottom','Base']],a.background_position)}
+    \${select('background_x','Posição horizontal',[['left','Esquerda'],['center','Centro'],['right','Direita']],a.background_x)}
+    \${number('overlay_opacity','Opacidade da sobreposição',a.overlay_opacity,0,1,.05)}
+   </div>
+  </section>
+  <section class="appearance-group">
+   <div class="appearance-group-head"><span>02</span><div><strong>Card do RSVP</strong><small>Cores, transparência e formato do cartão.</small></div></div>
+   <div class="settings-grid">
+    \${field('card_color','Cor do cartão','color',a.card_color,false)}
+    \${field('text_color','Cor do texto','color',a.text_color,false)}
+    \${field('muted_color','Texto secundário','color',a.muted_color,false)}
+    \${field('button_color','Cor principal / botão','color',a.button_color||a.color,false)}
+    \${field('button_text_color','Texto do botão','color',a.button_text_color,false)}
+    \${select('card_style','Estilo do cartão',[['soft','Suave'],['glass','Translúcido'],['solid','Sólido']],a.card_style)}
+    \${select('card_width','Largura do cartão',[['narrow','Estreito'],['medium','Médio'],['wide','Largo']],a.card_width)}
+    \${number('card_opacity','Opacidade do cartão',a.card_opacity,0.55,1,.05)}
+    \${number('card_blur','Desfoque do cartão',a.card_blur,0,30,1)}
+    \${number('card_radius','Arredondamento',a.card_radius,0,40,1)}
+   </div>
+  </section>
+  <section class="appearance-group">
+   <div class="appearance-group-head"><span>03</span><div><strong>Tipografia e idioma</strong><small>Estilo visual e idioma do convidado.</small></div></div>
+   <div class="settings-grid">
+    \${select('font_style','Tipografia',[['modern','Moderna'],['elegant','Elegante'],['friendly','Infantil suave']],a.font_style)}
+    \${select('interface_language','Idioma do convidado',[['pt-BR','Português'],['en','English']],a.interface_language)}
+   </div>
+  </section>
+  <section class="appearance-group">
+   <div class="appearance-group-head"><span>04</span><div><strong>Convite e agenda</strong><small>Links usados depois da confirmação.</small></div></div>
+   \${field('invitation_url','Link do convite para voltar · opcional','url',a.invitation_url||'',false)}
+   <div class="settings-grid">
+    \${field('calendar_location','Local / endereço para agenda · opcional','text',a.calendar_location||'',false)}
+    \${field('calendar_end_time','Horário de término · opcional','time',a.calendar_end_time||'',false)}
+   </div>
+  </section>
  </div>
- ${field('invitation_url','Link do convite para voltar · opcional','url',a.invitation_url||'',false)}
- ${field('calendar_location','Local para agenda · opcional','text',a.calendar_location||'',false)}
- ${field('calendar_end_time','Horário de término · opcional','time',a.calendar_end_time||'',false)}
- <input type="hidden" name="background_type" value="${escape(a.background_type||'none')}">
- <input type="hidden" name="background_url" value="${escape(a.background_url||'')}">
- <input type="hidden" name="cover_url" value="${escape(a.cover_url||'')}">
- <input type="hidden" name="logo_url" value="${escape(a.logo_url||'')}">`;
+ <input type="hidden" name="background_type" value="\${escape(a.background_type||'none')}">
+ <input type="hidden" name="background_url" value="\${escape(a.background_url||'')}">
+ <input type="hidden" name="cover_url" value="\${escape(a.cover_url||'')}">
+ <input type="hidden" name="logo_url" value="\${escape(a.logo_url||'')}">\`;
 }
 function collectAppearance(formEl,current){
  const fd=new FormData(formEl),a={...current};
