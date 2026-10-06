@@ -8,10 +8,11 @@ export class D1 {
 }
 export function fixture(){
  const mediaStore=new Map();
- const env={DB:new D1(),APP_ORIGIN:'https://rsvp.example',RP_ID:'rsvp.example',MP_ACCESS_TOKEN:'test-only',MP_WEBHOOK_SECRET:'test-secret',MP_COLLECTOR_ID:'123',MONTHLY_CENTS:'2990',CREDIT_1_CENTS:'990',CREDIT_5_CENTS:'3990',CREDIT_10_CENTS:'6990',GRACE_DAYS:'0',ASSETS:{fetch:async()=>new Response('static')},MEDIA:{
+ const env={DB:new D1(),APP_ORIGIN:'https://rsvp.example',RP_ID:'rsvp.example',MP_ACCESS_TOKEN:'test-only',MP_WEBHOOK_SECRET:'test-secret',MP_COLLECTOR_ID:'123',MONTHLY_CENTS:'2990',CREDIT_1_CENTS:'1490',CREDIT_5_CENTS:'6490',CREDIT_10_CENTS:'10990',GRACE_DAYS:'0',ASSETS:{fetch:async()=>new Response('static')},MEDIA:{
   async put(key,value,options={}){mediaStore.set(key,{bytes:value instanceof ArrayBuffer?value:value.buffer,httpMetadata:options.httpMetadata||{},httpEtag:'test-etag'});},
   async get(key){const item=mediaStore.get(key);return item?{body:item.bytes,httpMetadata:item.httpMetadata,httpEtag:item.httpEtag}:null;},
-  async delete(key){mediaStore.delete(key);}
+  async delete(key){mediaStore.delete(key);},
+  async list(){return {objects:[...mediaStore.keys()].slice(0,1).map(key=>({key}))};}
  }};
  const calls=[],resources=new Map();let sequence=0;
  env.MP_FETCH=async(url,options)=>{
@@ -27,4 +28,4 @@ export function fixture(){
  const exec=(query,...args)=>env.DB.db.prepare(query).run(...args);
  return {env,request,register,webhook,resources,calls,sql,exec,mediaStore};
 }
-export const approved=(id,order,amount=9.9)=>({id,external_reference:order,collector_id:123,currency_id:'BRL',transaction_amount:amount,status:'approved',transaction_amount_refunded:0});
+export const approved=(id,order,amount=14.9)=>({id,external_reference:order,collector_id:123,currency_id:'BRL',transaction_amount:amount,status:'approved',transaction_amount_refunded:0});
