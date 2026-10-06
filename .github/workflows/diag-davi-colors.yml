@@ -31,3 +31,12 @@ jobs:
         run: |
           set -euo pipefail
           pnpm exec wrangler d1 execute DB --remote --command "SELECT e.title, e.slug, e.appearance, s.slug AS studio_slug, s.name AS studio_name FROM events e JOIN studios s ON s.id=e.studio_id WHERE lower(e.title) LIKE '%davi%2%aninho%' OR lower(e.title) LIKE '%davi 2 aninhos%' ORDER BY e.created_at DESC LIMIT 10;"
+      - name: Conferir assets servidos em produção
+        run: |
+          set -euo pipefail
+          echo "HEAD app.js:"
+          curl -fSsI https://app.presencaconfirmada.com.br/vendor/app.js | grep -Ei '^(cache-control|etag|last-modified|cf-cache-status):' || true
+          echo "Bundle contém workspaceText?"
+          curl -fSsL https://app.presencaconfirmada.com.br/vendor/app.js | grep -q -- '--workspace-text' && echo yes || echo no
+          echo "CSS contém V3.2.1?"
+          curl -fSsL https://app.presencaconfirmada.com.br/styles.css | grep -q 'V3.2.1' && echo yes || echo no
