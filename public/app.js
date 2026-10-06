@@ -504,6 +504,95 @@ function bindRsvpModeSettings(formEl){
  };
  mode?.addEventListener('change',sync);sync();
 }
+function templateEditorFields(t={}){
+ const c=t.config||{},mode=c.rsvp_mode||'free',limit=c.max_people??'',a=parseObj(c.appearance),extra={...DEFAULT_EXTRA_FIELDS,...parseObj(c.extra_fields)},permissions={...DEFAULT_CLIENT_PERMISSIONS,...parseObj(c.client_permissions)},texts=parseObj(c.public_texts);
+ const listRules=`<div class="list-only-settings" ${mode==='list'?'':'hidden'}>${select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],c.list_behavior||'strict')}</div>`;
+ const peopleLimit=`<label class="people-limit-setting"><span class="field-label" id="people-limit-label">${mode==='list'?'Limite padrão por família':'Limite de pessoas · opcional'}${mode==='list'?'<b class="required-mark" aria-hidden="true">*</b>':''}</span><input name="max_people" type="number" min="1" max="100" value="${escape(limit)}" ${mode==='list'?'required aria-required="true"':''}><small class="field-hint" id="people-limit-hint">${mode==='list'?'Cada família respeita este teto.':'Deixe vazio para RSVP livre sem limite total.'}</small></label>`;
+ const extraFields=[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="extra_${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('');
+ const permissionFields=[['manage_guests','Gerenciar convidados'],['manage_appearance','Alterar aparência e mídias'],['manage_texts','Alterar textos públicos'],['view_messages','Ver mensagens'],['export_guests','Exportar lista e PDF'],['manage_event_details','Alterar dados do evento']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="perm_${k}" ${permissions[k]?'checked':''}> <span>${l}</span></label>`).join('');
+ const textFields=Object.entries({eyebrow:'Título pequeno',intro:'Introdução',yes_button:'Botão positivo',no_button:'Botão negativo',success_title:'Título após confirmar',success_message:'Mensagem após confirmar',decline_title:'Título após recusar',decline_message:'Mensagem após recusar'}).map(([k,l])=>field(`text_${k}`,l,'text',texts[k]||'',false)).join('');
+ return `${field('template_name','Nome do modelo','text',t.name||'')}
+ <div class="template-editor-section"><h3>RSVP e check-in</h3>${select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],mode)}${listRules}${peopleLimit}${select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],c.checkin_mode||'off')}</div>
+ <div class="template-editor-section"><h3>Campos opcionais</h3><div class="permission-list">${extraFields}</div></div>
+ <div class="template-editor-section"><h3>Painel da cliente</h3><div class="permission-list">${permissionFields}</div></div>
+ <div class="template-editor-section"><h3>Identidade reutilizável</h3><div class="settings-grid">${field('appearance_button_color','Cor principal','color',a.button_color||a.color||'#716864',false)}${field('appearance_background_color','Cor do fundo','color',a.background_color||'#f7f3f1',false)}${field('appearance_card_color','Cor do cartão','color',a.card_color||'#ffffff',false)}${field('appearance_text_color','Cor do texto','color',a.text_color||'#332f2d',false)}${select('appearance_font_style','Tipografia',[['modern','Moderna'],['elegant','Elegante'],['friendly','Infantil suave']],a.font_style||'modern')}${select('appearance_card_style','Estilo do cartão',[['soft','Suave'],['glass','Translúcido'],['solid','Sólido']],a.card_style||'soft')}</div><small class="field-hint">Mídias salvas no modelo continuam independentes. Aqui você edita apenas o estilo.</small></div>
+ <div class="template-editor-section"><h3>Conteúdo</h3><label><span class="field-label">Mensagem de boas-vindas</span><textarea name="welcome_message">${escape(c.welcome_message||'')}</textarea></label><details class="advanced-options"><summary>Textos personalizados</summary><div class="advanced-body">${textFields}</div></details></div>`;
+}
+
+function openTemplateEditor(template,done){
+ const current=template||{config:{}},isNew=!current.id;
+ const modal=openModal(isNew?'Novo modelo':'Editar modelo',`<p class="muted">Modelo é configuração reutilizável. Não consome crédito e nunca guarda convidados, respostas ou check-ins.</p>${form('template-editor',templateEditorFields(current),isNew?'Criar modelo':'Salvar modelo')}`);
+ const formEl=modal.querySelector('#template-editor');
+ bindRsvpModeSettings(formEl);
+ submit('template-editor',async(_,formNode)=>{
+  const fd=new FormData(formNode),base=current.config||{},baseAppearance=parseObj(base.appearance),extra_fields={},client_permissions={view:true},public_texts={...parseObj(base.public_texts)};
+  for(const k of Object.keys(DEFAULT_EXTRA_FIELDS))extra_fields[k]=fd.has(`extra_${k}`);
+  for(const k of Object.keys(DEFAULT_CLIENT_PERMISSIONS))if(k!=='view')client_permissions[k]=fd.has(`perm_${k}`);
+  for(const key of ['eyebrow','intro','yes_button','no_button','success_title','success_message','decline_title','decline_message'])public_texts[key]=String(fd.get(`text_${key}`)||'');
+  const maxRaw=fd.get('max_people');
+  const config={...base,
+   rsvp_mode:fd.get('rsvp_mode'),list_behavior:fd.get('list_behavior'),max_people:maxRaw===''?null:Number(maxRaw),checkin_mode:fd.get('checkin_mode'),
+   extra_fields,client_permissions,welcome_message:String(fd.get('welcome_message')||''),public_texts,
+   appearance:{...baseAppearance,button_color:fd.get('appearance_button_color'),color:fd.get('appearance_button_color'),background_color:fd.get('appearance_background_color'),card_color:fd.get('appearance_card_color'),text_color:fd.get('appearance_text_color'),font_style:fd.get('appearance_font_style'),card_style:fd.get('appearance_card_style')}
+  };
+  if(isNew)await api('/api/templates','POST',{name:fd.get('template_name'),config});
+  else await api(`/api/templates/${current.id}`,'PATCH',{name:fd.get('template_name'),config});
+  modal.closeModal();
+  notice(isNew?'Modelo criado sem consumir crédito.':'Modelo atualizado.');
+  if(done)await done();
+ });
+}
+
+function openUseTemplate(t){
+ const fields=field('title','Nome do evento')+field('event_date','Data e hora · opcional','datetime-local','',false)+field('location','Local · opcional','text','',false)+field('deadline','Prazo para confirmar · opcional','datetime-local','',false)+`<label><span class="field-label">Endereço do evento<b class="required-mark">*</b></span><input name="slug" required autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: <strong id="template-url-preview">seu-evento</strong></small></label>`;
+ const modal=openModal('Criar evento a partir do modelo',`<div class="template-use-note"><strong>${escape(t.name)}</strong><span>A nova festa será independente e só agora usará seu plano.</span></div>${form('template-use',fields,'Criar evento')}`);
+ bindAutoSlug('title','slug','template-url-preview');
+ submit('template-use',async b=>{
+  b.event_date=localToIso(b.event_date);
+  b.deadline=localToIso(b.deadline);
+  const {event}=await api(`/api/templates/${t.id}/use`,'POST',b);
+  modal.closeModal();
+  goto(`/app/eventos/${event.id}`);
+ });
+}
+
+function saveEventAsTemplate(base,e){
+ const modal=openModal('Salvar como modelo',`<p class="muted">Serão salvos regras, campos, textos, aparência, permissões e check-in. Convidados, respostas, QR, link da cliente, data, local e prazo ficam de fora.</p>${form('save-template-form',field('name','Nome do modelo','text',e.title),'Salvar modelo')}`);
+ submit('save-template-form',async b=>{
+  await api(`${base}/template`,'POST',{name:b.name});
+  modal.closeModal();
+  notice('Modelo salvo sem consumir crédito.');
+ });
+}
+
+async function modelsPage(){
+ const [{templates},{entitlement}]=await Promise.all([api('/api/templates'),api('/api/events/entitlement')]);
+ const canManage=user.role==='studio_owner'||user.role==='super_admin';
+ const cards=templates.map(t=>{
+  const c=t.config||{};
+  const mode=c.rsvp_mode==='list'?(c.list_behavior==='flexible'?'Lista flexível':'Lista fechada'):'Livre';
+  const check=({off:'Sem check-in',family:'QR por família',individual:'QR individual'}[c.checkin_mode||'off']);
+  const useAction=entitlement.can_create?`<button data-use-template="${t.id}">Usar em novo evento</button>`:'<a class="button" href="/app/financeiro">Liberar criação</a>';
+  const manage=canManage?`<button class="secondary" data-edit-template="${t.id}">Editar</button><button class="quiet-danger" data-delete-template="${t.id}">Excluir</button>`:'';
+  return `<article class="template-card"><div class="template-card-top"><span class="template-badge">MODELO</span><span>${Number(t.media_count||0)} mídia${Number(t.media_count||0)===1?'':'s'}</span></div><h2>${escape(t.name)}</h2><p>${escape(mode)} · ${escape(check)}</p><small>Atualizado em ${escape(formatDate(t.updated_at,true))}</small><div class="template-card-actions">${useAction}${manage}</div></article>`;
+ }).join('');
+ const empty=`<div class="empty-state"><div class="empty-mark">◇</div><h2>Nenhum modelo ainda</h2><p>Você pode criar um modelo do zero ou salvar as configurações de qualquer evento existente.</p>${canManage?'<button id="new-template-empty">Criar primeiro modelo</button>':''}</div>`;
+ app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">Biblioteca reutilizável</span><h1>Modelos de RSVP</h1><p>Guarde configurações que você usa sempre, sem transformar modelo em evento real.</p></div>${canManage?'<button id="new-template">+ Novo modelo</button>':''}</section><div class="template-info-strip"><strong>Modelos não consomem crédito.</strong><span>Crédito ou mensalidade só é usado quando um novo evento é criado a partir deles.</span></div><section class="content-section">${cards?`<div class="template-grid">${cards}</div>`:empty}</section>`;
+ menuEvents();
+ const byId=id=>templates.find(t=>t.id===id);
+ click('new-template',()=>openTemplateEditor(null,modelsPage));
+ click('new-template-empty',()=>openTemplateEditor(null,modelsPage));
+ document.querySelectorAll('[data-use-template]').forEach(btn=>btn.onclick=()=>openUseTemplate(byId(btn.dataset.useTemplate)));
+ document.querySelectorAll('[data-edit-template]').forEach(btn=>btn.onclick=()=>openTemplateEditor(byId(btn.dataset.editTemplate),modelsPage));
+ document.querySelectorAll('[data-delete-template]').forEach(btn=>btn.onclick=async()=>{
+  const t=byId(btn.dataset.deleteTemplate);
+  if(!confirm(`Excluir o modelo “${t.name}”? Eventos já criados não serão afetados.`))return;
+  await api(`/api/templates/${t.id}`,'DELETE',{});
+  notice('Modelo excluído.');
+  await modelsPage();
+ });
+}
+
 async function dashboard(){
  if(!user.studio){goto('/admin');return;}
  const archived=new URL(location.href).searchParams.get('arquivados')==='1';
