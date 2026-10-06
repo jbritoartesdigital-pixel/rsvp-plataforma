@@ -4,6 +4,10 @@ if(c.name!=='rsvp-plataforma'||c.d1_databases[0].database_name!=='rsvp-plataform
 if(c.d1_databases[0].database_id==='83b4f425-48ae-4b08-b286-83abdae277ed'||!/^[-a-f0-9]{36}$/.test(c.d1_databases[0].database_id)) throw Error('Configure um D1 comercial novo.');
 if(c.vars.APP_ORIGIN!=='https://app.presencaconfirmada.com.br'||c.vars.RP_ID!=='app.presencaconfirmada.com.br'||JSON.stringify(c).includes('REPLACE_')) throw Error('Configure domínio e RP ID comerciais.');
 if(new URL(c.vars.APP_ORIGIN).hostname!==c.vars.RP_ID) throw Error('RP_ID deve corresponder ao domínio.');
+if(c.workers_dev!==false||c.preview_urls!==false) throw Error('Produção não deve usar workers.dev nem preview URLs.');
+const routes=Array.isArray(c.routes)?c.routes:[];
+if(!routes.some(r=>r.custom_domain===true&&r.pattern==='app.presencaconfirmada.com.br')) throw Error('Configure o Custom Domain comercial.');
+if(!routes.some(r=>r.pattern==='*.presencaconfirmada.com.br/*'&&(r.zone_id==='682ae38c7ae33e59b117fef7355b5c1f'||r.zone_name==='presencaconfirmada.com.br'))) throw Error('Configure a rota wildcard comercial.');
 for(const n of [1,5,10]) if(!Number.isInteger(Number(c.vars[`CREDIT_${n}_CENTS`]))||Number(c.vars[`CREDIT_${n}_CENTS`])<=0) throw Error(`Configure preço do pacote de ${n} créditos.`);
 if(!c.vars.MP_COLLECTOR_ID) throw Error('Configure o ID da conta recebedora Mercado Pago.');
 for(const secret of ['MP_ACCESS_TOKEN','MP_WEBHOOK_SECRET','TURNSTILE_SECRET','MAILER_TOKEN']) if(secret in c.vars) throw Error(`${secret} não pode ficar no wrangler.jsonc.`);
