@@ -375,15 +375,35 @@ test('conta interna aprovada recebe créditos só na HML',async()=>{
 });
 
 
-test('modo livre não depende de quantidade configurada pela conviteira',async()=>{
+test('modo livre fica sem limite por padrão e aceita limite opcional explícito',async()=>{
  const f=fixture(),a=await f.register();
- f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
- const e=(await f.request('/api/events','POST',{title:'Livre',slug:'livre',rsvp_mode:'free',max_people:2},a.cookie)).body.event;
- assert.equal(e.max_people,100);
+ f.exec('UPDATE studios SET credits=2 WHERE id=?',a.user.studio_id);
+
+ const unlimited=(await f.request('/api/events','POST',{title:'Livre',slug:'livre',rsvp_mode:'free'},a.cookie)).body.event;
+ assert.equal(unlimited.max_people,null);
+ assert.equal(f.sql('SELECT max_people_limit FROM events WHERE id=?',unlimited.id).max_people_limit,null);
  const members=Array.from({length:12},(_,i)=>({name:i?'Acompanhante '+i:'Maria',person_type:i%3===0?'child':'adult',attendance_status:'yes'}));
- const r=await f.request('/api/public/marca-a/livre/rsvp','POST',{name:'Maria',response_status:'yes',members});
- assert.equal(r.status,200);
- assert.equal(r.body.guest.members.filter(m=>m.attendance_status==='yes').length,12);
+ const free=await f.request('/api/public/marca-a/livre/rsvp','POST',{name:'Maria',response_status:'yes',members});
+ assert.equal(free.status,200);
+ assert.equal(free.body.guest.max_people,null);
+ assert.equal(free.body.guest.members.filter(m=>m.attendance_status==='yes').length,12);
+
+ const limited=(await f.request('/api/events','POST',{title:'Livre limitado',slug:'livre-limitado',rsvp_mode:'free',max_people:3},a.cookie)).body.event;
+ assert.equal(limited.max_people,3);
+ const tooMany=await f.request('/api/public/marca-a/livre-limitado/rsvp','POST',{name:'Ana',response_status:'yes',members:[
+  {name:'Ana',person_type:'adult',attendance_status:'yes'},
+  {name:'Bia',person_type:'child',attendance_status:'yes'},
+  {name:'Caio',person_type:'adult',attendance_status:'yes'},
+  {name:'Davi',person_type:'child',attendance_status:'yes'}
+ ]});
+ assert.equal(tooMany.status,400);
+ const within=await f.request('/api/public/marca-a/livre-limitado/rsvp','POST',{name:'Ana',response_status:'yes',members:[
+  {name:'Ana',person_type:'adult',attendance_status:'yes'},
+  {name:'Bia',person_type:'child',attendance_status:'yes'},
+  {name:'Caio',person_type:'adult',attendance_status:'yes'}
+ ]});
+ assert.equal(within.status,200);
+ assert.equal(within.body.guest.members.filter(m=>m.attendance_status==='yes').length,3);
 });
 
 test('link privado da cliente usa subdomínio da conviteira',async()=>{
