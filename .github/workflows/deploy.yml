@@ -1,6 +1,9 @@
 name: Publicar plataforma comercial
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Acionar correção de navegação"]
+    types: [completed]
 permissions:
   contents: read
 concurrency:
@@ -8,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: commercial
     steps:
