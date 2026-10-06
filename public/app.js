@@ -853,7 +853,7 @@ async function checkin(eventId){
  menuEvents();
  let stream,running=false,pendingPayload=null;
  const stop=()=>{running=false;stream?.getTracks().forEach(t=>t.stop());stream=null;const video=document.querySelector('#video'),close=document.querySelector('#stop-camera');if(video)video.hidden=true;if(close)close.hidden=true;};
- const rawToken=value=>{let raw=String(value||'').trim();try{raw=new URL(raw).pathname.split('/').filter(Boolean).pop();}catch{}return raw;};
+ const rawToken=value=>{let raw=String(value||'').trim();if(!raw)return '';try{const u=new URL(raw,location.origin);if(u.pathname.includes('/q/'))raw=u.pathname.split('/').filter(Boolean).pop();}catch{}return raw;};
  const box=document.querySelector('#scan-result');
  const showPreview=async(raw,payload=null)=>{
   raw=rawToken(raw);if(!raw)throw Error('Informe um QR válido.');
