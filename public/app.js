@@ -111,6 +111,7 @@ function setShell(mode){
  if(mode==='app')nav.innerHTML='<a href="/app">Painel</a>';
  else if(mode==='event')nav.innerHTML='';
  else nav.innerHTML='<a href="/planos">Planos</a><a class="nav-login" href="/app/login">Entrar</a>';
+ if(mode!=='app')setLogoHome('/');
 }
 function jsonDate(value,time=''){
  if(!value)return '';
@@ -208,8 +209,13 @@ function openJsonImport(eventId=null,currentEvent=null,done=null){
   }catch(err){preview.innerHTML='';notice(err.message||'JSON inválido.');}
  };
 }
-const goto=path=>{location.href=path;};
+const goto=(path,{replace=false}={})=>{replace?location.replace(path):location.assign(path);};
 let user;
+const authenticatedHome=()=>user?.role==='super_admin'&&!user?.impersonated_studio_id?'/admin':'/app';
+const setLogoHome=path=>{
+ const logo=document.querySelector('header .logo');
+ if(logo)logo.setAttribute('href',path);
+};
 const safeBrandColor=(value,fallback='#716864')=>/^#[a-f0-9]{6}$/i.test(String(value||''))?String(value):fallback;
 const studioBrand=()=>{
  const b=parseObj(user?.studio?.brand),color=safeBrandColor(b.color);
@@ -261,16 +267,16 @@ async function authPage(path){
   const registrationFields=`<div class="form-section"><div class="form-section-head"><span>1</span><div><h2>Sua marca</h2><p>É assim que seus clientes vão reconhecer sua plataforma.</p></div></div>${field('brand','Nome da sua marca')}<label><span class="field-label">Endereço da sua marca<b class="required-mark" aria-hidden="true">*</b></span><input name="slug" required aria-required="true" autocapitalize="none" spellcheck="false"><small class="field-hint">Seu link: app.presencaconfirmada.com.br/<strong id="brand-url-preview">seu-endereco</strong></small></label></div><div class="form-section"><div class="form-section-head"><span>2</span><div><h2>Seu acesso</h2><p>Dados para entrar e receber informações da conta.</p></div></div>${field('name','Seu nome')}${field('whatsapp','WhatsApp','tel')}${field('email','E-mail','email')}${field('password','Senha · mínimo de 8 caracteres','password')}</div><p class="legal-copy">Ao continuar, você concorda com os <a href="/termos">termos</a> e a <a href="/privacidade">privacidade</a>.</p>`;
   app.innerHTML=`<div class="auth-layout"><section class="flow-intro"><span class="eyebrow">Primeiro acesso</span><h1>Crie sua conta em poucos passos</h1><p>Depois você escolhe o plano. Nenhuma cobrança acontece nesta tela.</p></section><div class="card setup-card">${form('register',registrationFields,'Criar minha conta')}</div></div>`;
   bindAutoSlug('brand','slug','brand-url-preview');
-  submit('register',async b=>{await api('/api/auth/register','POST',b);goto('/app/financeiro');});return;
+  submit('register',async b=>{await api('/api/auth/register','POST',b);goto('/app/financeiro',{replace:true});});return;
  }
  if(path==='/app/reset') {
   const raw=new URL(location.href).searchParams.get('token');
   app.innerHTML=`<div class="auth-layout narrow"><section class="flow-intro"><span class="eyebrow">Acesso</span><h1>Recuperar conta</h1><p>${raw?'Crie uma nova senha para voltar à plataforma.':'Informe o e-mail usado no cadastro.'}</p></section><div class="card auth-card">${raw?form('reset',field('password','Nova senha · mínimo de 8 caracteres','password'),'Salvar nova senha'):form('reset',field('email','E-mail','email'),'Enviar link de recuperação')}</div></div>`;
-  submit('reset',async b=>{const result=await api(raw?'/api/auth/reset/complete':'/api/auth/reset/request','POST',raw?{...b,token:raw}:b);notice(result.message||'Senha alterada.');if(raw)goto('/app/login');});return;
+  submit('reset',async b=>{const result=await api(raw?'/api/auth/reset/complete':'/api/auth/reset/request','POST',raw?{...b,token:raw}:b);notice(result.message||'Senha alterada.');if(raw)goto('/app/login',{replace:true});});return;
  }
  app.innerHTML=`<div class="auth-layout narrow"><section class="flow-intro"><span class="eyebrow">Área da profissional</span><h1>Bem-vinda de volta</h1><p>Entre para gerenciar seus eventos, confirmações e pagamentos.</p></section><div class="card auth-card">${form('login',field('email','E-mail','email')+field('password','Senha','password'),'Entrar')}<div class="auth-separator"><span>ou</span></div><button class="secondary full-button" id="passkey-login">Entrar com digital / Face ID</button><div class="auth-links"><a href="/app/reset">Esqueci minha senha</a><a href="/app/cadastro">Criar conta</a></div></div></div>`;
- submit('login',async b=>{await api('/api/auth/login','POST',b);goto('/app');});
- click('passkey-login',async()=>{const x=await api('/api/passkeys/authenticate/options','POST',{});const response=await startAuthentication({optionsJSON:x.options});await api('/api/passkeys/authenticate/verify','POST',{challenge_id:x.challenge_id,response});goto('/app');});
+ submit('login',async b=>{await api('/api/auth/login','POST',b);goto('/app',{replace:true});});
+ click('passkey-login',async()=>{const x=await api('/api/passkeys/authenticate/options','POST',{});const response=await startAuthentication({optionsJSON:x.options});await api('/api/passkeys/authenticate/verify','POST',{challenge_id:x.challenge_id,response});goto('/app',{replace:true});});
 }
 
 const PUBLIC_TEXTS={
@@ -913,7 +919,7 @@ async function account(adminMode=false){
  const pureAdmin=adminMode||user.role==='super_admin'&&!user.impersonated_studio_id;
  app.innerHTML=menu()+`<section class="app-page-head"><div><span class="eyebrow">${pureAdmin?'Acesso administrativo':'Segurança'}</span><h1>${pureAdmin?'Meu acesso':'Minha conta'}</h1><p>${escape(user.email)}</p>${pureAdmin?'<small class="admin-role-note">Super Admin da Presença Confirmada · segurança desta conta</small>':''}</div><div class="head-actions"><button class="secondary" id="logout-current">Sair desta conta</button></div></section><section class="account-grid"><div class="card section-card"><div class="section-row"><div><h2>Digital ou Face ID</h2><p>Use a segurança do seu próprio aparelho para entrar sem digitar a senha.</p></div></div><button id="register-passkey">Cadastrar este dispositivo</button><div class="device-list">${passkeys.length?passkeys.map(k=>`<div class="device-row"><div><strong>${escape(k.label)}</strong><span>Cadastrado em ${formatDate(k.created_at)}</span></div><button class="secondary small" data-remove="${escape(k.id)}">Remover</button></div>`).join(''):'<p class="muted">Nenhum dispositivo cadastrado ainda.</p>'}</div></div><div class="card section-card"><h2>Alterar senha</h2><p class="muted">Use pelo menos 8 caracteres.</p>${form('password',field('current_password','Senha atual','password')+field('password','Nova senha','password'),'Alterar senha')}<div class="danger-zone"><strong>Sessões abertas</strong><p>Use esta opção se entrou em um aparelho que não está mais com você.</p><button class="quiet-danger" id="logout-all">Sair de todos os dispositivos</button></div></div></section>`;
  menuEvents();
- click('logout-current',async()=>{await api('/api/auth/logout','POST',{});goto('/app/login');});
+ click('logout-current',async()=>{await api('/api/auth/logout','POST',{});goto('/app/login',{replace:true});});
  click('register-passkey',async()=>{const x=await api('/api/passkeys/register/options','POST',{}),response=await startRegistration({optionsJSON:x.options});await api('/api/passkeys/register/verify','POST',{challenge_id:x.challenge_id,response,label:'Meu dispositivo'});await account(pureAdmin);});
  submit('password',async b=>{await api('/api/auth/password','POST',b);notice('Senha alterada.');});
  click('logout-all',async()=>{if(!confirm('Encerrar todas as sessões da sua conta?'))return;await api('/api/auth/logout-all','POST',{});goto('/app/login');});
@@ -972,17 +978,30 @@ async function main(){
  else if(path.startsWith('/q/')||path.startsWith('/cliente/')||(!(path==='/app'||path.startsWith('/app/'))&&!(path==='/admin'||path.startsWith('/admin/'))))setShell('event');
  else setShell('app');
 
- if(path==='/')return landing();
+ if(path==='/'){
+  try{
+   user=(await api('/api/auth/me')).user;
+   if(user){setLogoHome(authenticatedHome());goto(authenticatedHome(),{replace:true});return;}
+  }catch{}
+  return landing();
+ }
  if(path==='/planos'){app.innerHTML=`<section class="plans-hero"><span class="hero-kicker">PLANOS SEM COMPLICAÇÃO</span><h1>Escolha o ritmo da sua agenda.</h1><p>Compre créditos quando precisar ou use a mensalidade para criar eventos sem limite enquanto ela estiver vigente.</p></section>${await plans()}<p class="plans-footnote">Créditos já comprados continuam guardados. Cada novo evento usa 1 crédito quando sua modalidade ativa for créditos.</p>`;bindPlans(false);return;}
  if(path==='/termos'||path==='/privacidade'){app.innerHTML=`<article class="legal-page"><span class="eyebrow">Documento</span><h1>${path==='/termos'?'Termos de uso':'Privacidade'}</h1><p class="legal-lead">${path==='/termos'?'Regras gerais para uso da plataforma Presença Confirmada.':'Como os dados são tratados na plataforma Presença Confirmada.'}</p><section><h2>${path==='/termos'?'Uso da plataforma':'Dados utilizados'}</h2><p>${path==='/termos'?'A plataforma organiza confirmações de presença e entradas em eventos. A profissional responsável pela conta deve utilizar dados de convidados de forma autorizada e apenas para a finalidade do evento.':'A plataforma pode tratar nome, contato, respostas, acompanhantes, restrições alimentares e mensagens fornecidas para organizar o evento.'}</p></section><section><h2>${path==='/termos'?'Planos e pagamentos':'Segurança e fornecedores'}</h2><p>${path==='/termos'?'Cada evento consome um crédito quando a modalidade ativa é créditos. Na modalidade mensal, novos eventos podem ser criados enquanto a mensalidade estiver vigente. Pagamentos e estornos são processados pelo Mercado Pago.':'Passkeys armazenam apenas chaves públicas na plataforma; dados biométricos permanecem no dispositivo. Dados de cartão são processados pelo Mercado Pago. Quando a proteção anti-spam estiver ativada em um evento, a verificação Turnstile da Cloudflare também poderá processar dados técnicos necessários para distinguir acessos legítimos de abuso.'}</p></section><div class="draft-notice">A identificação legal da operadora, contato de suporte, política final de retenção e procedimento de exclusão serão inseridos antes da abertura comercial.</div></article>`;return;}
+ if(['/app/login','/app/cadastro'].includes(path)){
+  try{
+   user=(await api('/api/auth/me')).user;
+   if(user){setLogoHome(authenticatedHome());goto(authenticatedHome(),{replace:true});return;}
+  }catch{}
+ }
  if(['/app/login','/app/cadastro','/app/reset'].includes(path))return authPage(path);
  let m=path.match(/^\/q\/([^/]+)$/);if(m)return qrPage(m[1]);
  m=path.match(/^\/cliente\/([^/]+)$/);if(m)return clientPage(m[1]);
  if(!(path==='/app'||path.startsWith('/app/')) && !(path==='/admin'||path.startsWith('/admin/'))){const hostStudio=tenantSlugFromHost();if(hostStudio){m=path.match(/^\/([^/]+)$/);if(m)return publicPage(hostStudio,m[1]);}m=path.match(/^\/([^/]+)\/([^/]+)$/);if(m)return publicPage(m[1],m[2]);throw Error('Página não encontrada.');}
- try{user=(await api('/api/auth/me')).user;}catch{goto('/app/login');return;}
+ try{user=(await api('/api/auth/me')).user;}catch{goto('/app/login',{replace:true});return;}
  applyStudioBrand();
  const pureAdmin=user.role==='super_admin'&&!user.impersonated_studio_id;
- if(pureAdmin&&!['/admin','/admin/conta'].includes(path)){goto('/admin');return;}
+ setLogoHome(pureAdmin?'/admin':'/app');
+ if(pureAdmin&&!['/admin','/admin/conta'].includes(path)){goto('/admin',{replace:true});return;}
  if(path==='/admin')return adminPage();
  if(path==='/admin/conta')return account(true);
  if(path==='/app')return dashboard();
