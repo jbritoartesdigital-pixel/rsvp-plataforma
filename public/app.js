@@ -2,7 +2,7 @@ import {startRegistration,startAuthentication} from '@simplewebauthn/browser';
 import QRCode from 'qrcode';
 const app=document.querySelector('#app');
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=c=>c?new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(c/100):'Em breve';
+const money=c=>(c===null||c===undefined)?'Em breve':new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(c)/100);
 const labelStatus=value=>({
  active:'Ativo',inactive:'Inativo',archived:'Arquivado',
  pending:'Pendente',approved:'Aprovado',rejected:'Recusado',failed:'Falhou',cancelled:'Cancelado',
@@ -242,6 +242,7 @@ const menu=()=>{
  if(pureAdmin)return `<div class="app-nav-wrap admin-nav-wrap"><nav class="app-tabs admin-tabs" aria-label="Navegação administrativa">${item('/admin','Admin',p==='/admin')}${item('/admin/conta','Meu acesso',p==='/admin/conta')}</nav></div>`;
  return `<div class="app-nav-wrap"><nav class="app-tabs" aria-label="Navegação da plataforma">
   ${item('/app','Eventos',p==='/app'||p.startsWith('/app/eventos'))}
+  ${item('/app/modelos','Modelos',p==='/app/modelos')}
   ${item('/app/financeiro','Financeiro',p==='/app/financeiro')}
   ${item('/app/marca','Marca',p==='/app/marca')}
   ${item('/app/conta','Conta',p==='/app/conta')}
@@ -655,7 +656,7 @@ async function eventPage(eventId){
   content=`<section class="settings-workspace"><div class="card section-card"><span class="eyebrow">Evento</span><h2>Dados e regras do RSVP</h2><p class="muted">Defina tipo de confirmação, limites, prazo e check-in.</p>${form('settings',eventSettingsFields(e),'Salvar alterações')}</div>
   <div class="card section-card"><span class="eyebrow">Formulário</span><h2>Campos opcionais</h2><p class="muted">Escolha o que será perguntado além da presença e acompanhantes.</p>${form('extra-fields',`<div class="permission-list">${[['phone','Telefone'],['dietary','Restrição alimentar'],['notes','Observações'],['message','Mensagem carinhosa']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="${k}" ${extra[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar campos')}</div>
   <div class="card section-card client-access-settings"><span class="eyebrow">Sua cliente</span><h2>Permissões do painel privado</h2><p class="muted">O link da cliente fica na aba <strong>Visão geral</strong>. Aqui você escolhe o que ela pode editar.</p>${form('client-permissions',`<div class="permission-list">${[['manage_guests','Adicionar e editar convidados'],['manage_appearance','Alterar aparência e mídias'],['manage_texts','Alterar textos públicos'],['view_messages','Ver mensagens dos convidados'],['export_guests','Exportar lista e PDF'],['manage_event_details','Alterar data, local e campos']].map(([k,l])=>`<label class="check-label"><input type="checkbox" name="${k}" ${permissions[k]?'checked':''}> <span>${l}</span></label>`).join('')}</div>`,'Salvar permissões')}<a class="text-action" href="/app/eventos/${eventId}?tab=overview">Ver link da cliente</a></div>
-  <div class="card section-card"><span class="eyebrow">Ferramentas</span><h2>Gerenciamento do evento</h2><div class="tool-stack">${entitlement.can_create?'<button class="secondary" id="duplicate-event">Duplicar evento</button>':'<a class="button secondary" href="/app/financeiro">Comprar plano para duplicar</a>'}<button class="secondary" id="history">Histórico</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button><button class="secondary" id="pause-event">${e.status==='active'?'Pausar confirmações':'Reativar confirmações'}</button><button class="quiet-danger" id="archive-event">Arquivar evento</button></div></div></section>`;
+  <div class="card section-card"><span class="eyebrow">Ferramentas</span><h2>Gerenciamento do evento</h2><div class="tool-stack">${entitlement.can_create?'<button class="secondary" id="duplicate-event">Duplicar evento</button>':'<a class="button secondary" href="/app/financeiro">Comprar plano para duplicar</a>'}<button class="secondary" id="save-template">Salvar como modelo</button><button class="secondary" id="history">Histórico</button><button class="secondary" id="import-event-json">Importar JSON</button><button class="secondary" id="export-event-json">Exportar JSON</button><button class="secondary" id="pause-event">${e.status==='active'?'Pausar confirmações':'Reativar confirmações'}</button><button class="quiet-danger" id="archive-event">Arquivar evento</button></div></div></section>`;
  }
  app.innerHTML=menu()+header+content;
  menuEvents();
@@ -699,7 +700,7 @@ async function eventPage(eventId){
   submit('settings',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);await api(base,'PATCH',b);notice('Evento atualizado.');await eventPage(eventId);});
   submit('extra-fields',async(_,formEl)=>{const fd=new FormData(formEl);await api(base,'PATCH',{extra_fields:Object.fromEntries(['phone','dietary','notes','message'].map(k=>[k,fd.has(k)]))});notice('Campos atualizados.');});
   submit('client-permissions',async(_,formEl)=>{const fd=new FormData(formEl),body={view:true};for(const k of Object.keys(DEFAULT_CLIENT_PERMISSIONS))if(k!=='view')body[k]=fd.has(k);await api(base,'PATCH',{client_permissions:body});notice('Permissões da cliente salvas.');});
-  click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));if(entitlement.can_create)click('duplicate-event',async()=>{if(!confirm('Duplicar este evento? A cópia conta como um novo evento e usa seu plano vigente.'))return;const {event}=await api(`${base}/duplicate`,'POST',{});goto(`/app/eventos/${event.id}`);});click('pause-event',async()=>{await api(base,'PATCH',{status:e.status==='active'?'inactive':'active'});await eventPage(eventId);});click('archive-event',async()=>{if(!confirm('Arquivar este evento? O RSVP deixará de receber respostas.'))return;await api(`${base}/archive`,'POST',{});goto('/app');});click('history',()=>showHistory(base));
+  click('save-template',()=>saveEventAsTemplate(base,e));  click('import-event-json',()=>openJsonImport(eventId,e,()=>eventPage(eventId)));click('export-event-json',()=>downloadJson(`${cleanSlug(e.title)||'evento'}-config.json`,exportEventJson(e)));if(entitlement.can_create)click('duplicate-event',async()=>{if(!confirm('Duplicar este evento? Regras, textos, aparência e mídias serão copiados de forma independente. Data, local e prazo ficam em branco. A cópia usa seu plano vigente.'))return;const {event}=await api(`${base}/duplicate`,'POST',{});goto(`/app/eventos/${event.id}`);});click('pause-event',async()=>{await api(base,'PATCH',{status:e.status==='active'?'inactive':'active'});await eventPage(eventId);});click('archive-event',async()=>{if(!confirm('Arquivar este evento? O RSVP deixará de receber respostas.'))return;await api(`${base}/archive`,'POST',{});goto('/app');});click('history',()=>showHistory(base));
  }
 }
 function parseCSV(input){const rows=[[]];let current='',quoted=false;for(let i=0;i<input.length;i++){const c=input[i];if(c==='"'){if(quoted&&input[i+1]==='"'){current+='"';i++;}else quoted=!quoted;}else if(c===','&&!quoted){rows.at(-1).push(current);current='';}else if(c==='\n'&&!quoted){rows.at(-1).push(current.replace(/\r$/,''));current='';rows.push([]);}else current+=c;}if(quoted)throw Error('CSV com aspas não fechadas.');rows.at(-1).push(current.replace(/\r$/,''));return rows;}
@@ -840,7 +841,7 @@ async function clientPage(raw){
  }
  if(tab==='guests'){
   content=`<section class="client-guests-section"><div class="section-row client-guest-actions"><div><h2>Convidados</h2></div><div class="row">${permissions.manage_guests?'<button class="secondary small" id="client-add">Adicionar família</button><button class="secondary small" id="client-bulk-add">Adicionar vários</button>':''}${permissions.export_guests?'<button class="secondary small" id="client-export">CSV</button><button class="secondary small" id="client-pdf">PDF</button>':''}</div></div>
-  <div class="guest-toolbar client-guest-toolbar"><input id="client-search" placeholder="Buscar convidado ou acompanhante"><div class="filter-chips"><button class="active" data-client-filter="">Todos <b>${guests.length}</b></button><button data-client-filter="yes">Confirmados <b>${guests.filter(g=>g.response_status==='yes').length}</b></button><button data-client-filter="pending">Pendentes <b>${guests.filter(g=>g.response_status==='pending').length}</b></button><button data-client-filter="no">Não irão <b>${guests.filter(g=>g.response_status==='no').length}</b></button></div></div>
+  <div class="guest-toolbar client-guest-toolbar"><input id="client-search" placeholder="Buscar convidado ou acompanhante"><div class="filter-chips"><button class="active" data-client-filter="">Todos <b>${guests.length}</b></button><button data-client-filter="yes">Confirmados <b>${guests.filter(g=>g.response_status==='yes').length}</b></button><button data-client-filter="pending">Pendentes <b>${guests.filter(g=>g.response_status==='pending').length}</b></button><button data-client-filter="no">Não irão <b>${guests.filter(g=>g.response_status==='no').length}</b></button><button data-client-filter="duplicates">Duplicados <b>${guests.filter(g=>g.possible_duplicate).length}</b></button></div></div>
   <div class="client-guest-list">${guests.map(g=>clientGuestCardHtml(g,permissions)).join('')||'<div class="empty-state compact"><p>Nenhum convidado cadastrado.</p></div>'}</div></section>`;
  }
  if(tab==='messages'){
@@ -1005,6 +1006,7 @@ async function main(){
  if(path==='/admin')return adminPage();
  if(path==='/admin/conta')return account(true);
  if(path==='/app')return dashboard();
+ if(path==='/app/modelos')return modelsPage();
  if(path==='/app/financeiro')return finances();
  if(path==='/app/marca')return brand();
  if(path==='/app/conta')return account();
