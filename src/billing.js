@@ -1,4 +1,4 @@
-import {fail,now,id,stmt,one,all,run,body,integer,choice,hash,audit,json} from './core.js';
+import {fail,now,id,stmt,one,all,run,body,integer,choice,hash,audit,integrationEvent,json} from './core.js';
 import {session,owner} from './auth.js';
 export function catalog(env) {
  return [1,5,10].map(n=>({key:`credits_${n}`,kind:'credits',quantity:n,amount_cents:Number(env[`CREDIT_${n}_CENTS`])||null})).concat({key:'monthly',kind:'monthly',quantity:0,amount_cents:Number(env.MONTHLY_CENTS)||2990});
@@ -51,64 +51,86 @@ export function periodEnd(value,grace=0) {
 }
 export async function applyCreditPayment(env,p) {
  const order=await one(env,"SELECT * FROM billing_orders WHERE id=? AND kind='credits'",String(p.external_reference||''));
- if(!order) return; await verifyPayment(env,p,order);
+ if(!order) return null; await verifyPayment(env,p,order);
  const paymentId=String(p.id),stamp=now(),reversed=['refunded','charged_back','cancelled'].includes(p.status)||Number(p.transaction_amount_refunded)>0;
- const status=reversed?'refunded':p.status;
- // A unique purchase per order prevents multiple approved payments crediting one checkout twice.
- // Ledger INSERTs and payment status are one D1 transaction; retries cannot double-credit or double-reverse.
- await env.DB.batch([
+ const status=p.status==='charged_back'?'charged_back':reversed?'refunded':p.status;
+ const previous=await one(env,'SELECT status FROM payments WHERE id=?',paymentId);
+ const results=await env.DB.batch([
   stmt(env,`INSERT INTO payments VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN payments.status IN ('refunded','charged_back') THEN payments.status ELSE excluded.status END,updated_at=excluded.updated_at`,paymentId,order.id,status,order.amount_cents,stamp),
   stmt(env,"UPDATE billing_orders SET credited_payment_id=? WHERE id=? AND credited_payment_id IS NULL AND EXISTS(SELECT 1 FROM payments WHERE id=? AND status='approved')",paymentId,order.id,paymentId),
   stmt(env,`INSERT OR IGNORE INTO credit_ledger SELECT ?,studio_id,quantity,'purchase',?,? FROM billing_orders WHERE id=? AND EXISTS(SELECT 1 FROM payments WHERE id=? AND status='approved') AND NOT EXISTS(SELECT 1 FROM credit_ledger WHERE source_key=?)`,id(),`order:${order.id}`,stamp,order.id,paymentId,`refund:${order.id}`),
-  stmt(env,`INSERT OR IGNORE INTO credit_ledger SELECT ?,studio_id,-quantity,'refund',?,? FROM billing_orders WHERE id=? AND credited_payment_id=? AND EXISTS(SELECT 1 FROM payments WHERE id=? AND status='refunded') AND EXISTS(SELECT 1 FROM credit_ledger WHERE source_key=?)`,id(),`refund:${order.id}`,stamp,order.id,paymentId,paymentId,`order:${order.id}`),
+  stmt(env,`INSERT OR IGNORE INTO credit_ledger SELECT ?,studio_id,-quantity,'refund',?,? FROM billing_orders WHERE id=? AND credited_payment_id=? AND EXISTS(SELECT 1 FROM payments WHERE id=? AND status IN ('refunded','charged_back')) AND EXISTS(SELECT 1 FROM credit_ledger WHERE source_key=?)`,id(),`refund:${order.id}`,stamp,order.id,paymentId,paymentId,`order:${order.id}`),
   stmt(env,`UPDATE billing_orders SET status=CASE WHEN EXISTS(SELECT 1 FROM credit_ledger WHERE source_key=?) THEN 'refunded' WHEN EXISTS(SELECT 1 FROM credit_ledger WHERE source_key=?) THEN 'approved' ELSE ? END WHERE id=?`,`refund:${order.id}`,`order:${order.id}`,status,order.id)
  ]);
+ if(results[2]?.meta?.changes)await audit(env,order.studio_id,null,'credit_purchase_granted',{order_id:order.id,payment_id:paymentId,quantity:order.quantity}).catch(()=>{});
+ if(results[3]?.meta?.changes)await audit(env,order.studio_id,null,status==='charged_back'?'payment_chargeback':'payment_refunded',{order_id:order.id,payment_id:paymentId,quantity:order.quantity}).catch(()=>{});
+ if(previous?.status!==status&&!results[2]?.meta?.changes&&!results[3]?.meta?.changes)await audit(env,order.studio_id,null,'payment_status_changed',{order_id:order.id,payment_id:paymentId,status}).catch(()=>{});
+ return {order,payment_id:paymentId,status};
 }
 export async function recomputeMonthly(env,order) {
  await run(env,`UPDATE studios SET monthly_until=(SELECT MAX(i.period_end) FROM subscription_invoices i JOIN payments p ON p.id=i.payment_id WHERE i.order_id=? AND i.status='approved' AND p.status='approved') WHERE id=? AND billing_mode='monthly' AND billing_generation=? AND subscription_id=?`,order.id,order.studio_id,order.generation,order.provider_id);
 }
 export async function applyInvoice(env,invoice) {
- // subscription_authorized_payment identifies an invoice, never a /v1/payments ID.
  const subscription=await mp(env,`/preapproval/${encodeURIComponent(invoice.preapproval_id)}`);
  const order=await one(env,"SELECT * FROM billing_orders WHERE id=? AND kind='monthly'",String(subscription.external_reference||''));
- if(!order || String(subscription.id)!==order.provider_id) return;
+ if(!order || String(subscription.id)!==order.provider_id) return null;
  const paymentId=invoice.payment?.id ?? invoice.payment_id;
- if(!paymentId) return; // A scheduled invoice is not an entitlement.
+ if(!paymentId) return null;
  const p=await mp(env,`/v1/payments/${encodeURIComponent(paymentId)}`); await verifyPayment(env,p,order);
  if(String(p.id)!==String(paymentId)) fail(400,'Pagamento divergente.');
- // Recurring payments can omit external_reference; the invoice and subscription establish the link.
  if(p.external_reference && String(p.external_reference)!==order.id) fail(400,'Referência divergente.');
  const end=periodEnd(invoice.debit_date||invoice.date_created,Number(env.GRACE_DAYS||0));
  const valid=subscription.status==='authorized' && invoice.status==='processed' && p.status==='approved' && !(Number(p.transaction_amount_refunded)>0);
- const status=valid?'approved':(['refunded','charged_back','cancelled'].includes(p.status)||Number(p.transaction_amount_refunded)>0?'refunded':'pending');
- const stamp=now();
+ const reversed=['refunded','charged_back','cancelled'].includes(p.status)||Number(p.transaction_amount_refunded)>0;
+ const status=valid?'approved':p.status==='charged_back'?'charged_back':reversed?'refunded':'pending';
+ const stamp=now(),previous=await one(env,'SELECT status FROM payments WHERE id=?',String(p.id));
  await env.DB.batch([
   stmt(env,`INSERT INTO payments VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN payments.status IN ('refunded','charged_back') THEN payments.status ELSE excluded.status END,updated_at=excluded.updated_at`,String(p.id),order.id,status,order.amount_cents,stamp),
-  stmt(env,`INSERT INTO subscription_invoices VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN subscription_invoices.status='refunded' THEN 'refunded' ELSE excluded.status END,period_end=excluded.period_end,updated_at=excluded.updated_at`,String(invoice.id),order.id,String(p.id),status,end,stamp),
+  stmt(env,`INSERT INTO subscription_invoices VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN subscription_invoices.status IN ('refunded','charged_back') THEN subscription_invoices.status ELSE excluded.status END,period_end=excluded.period_end,updated_at=excluded.updated_at`,String(invoice.id),order.id,String(p.id),status,end,stamp),
   stmt(env,`UPDATE studios SET monthly_until=(SELECT MAX(i.period_end) FROM subscription_invoices i JOIN payments p ON p.id=i.payment_id WHERE i.order_id=? AND i.status='approved' AND p.status='approved') WHERE id=? AND billing_mode='monthly' AND billing_generation=? AND subscription_id=?`,order.id,order.studio_id,order.generation,order.provider_id),
   stmt(env,'UPDATE billing_orders SET status=? WHERE id=?',valid?'approved':status,order.id)
  ]);
+ if(previous?.status!==status)await audit(env,order.studio_id,null,status==='approved'?'subscription_payment_approved':status==='charged_back'?'payment_chargeback':status==='refunded'?'payment_refunded':'subscription_payment_status',{order_id:order.id,payment_id:String(p.id),invoice_id:String(invoice.id),status,period_end:end}).catch(()=>{});
+ return {order,payment_id:String(p.id),status};
 }
 async function processWebhook(request,env,url) {
- const b=await body(request),resource=await signedWebhook(request,env,url,b);
- if(b.type==='subscription_authorized_payment') { const invoice=await mp(env,`/authorized_payments/${resource}`); if(String(invoice.id)!==resource) fail(400,'Fatura divergente.'); await applyInvoice(env,invoice); }
- else if(b.type==='payment') {
-  const p=await mp(env,`/v1/payments/${resource}`); if(String(p.id)!==resource) fail(400,'Pagamento divergente.');
-  const invoice=await one(env,'SELECT i.order_id FROM subscription_invoices i WHERE i.payment_id=?',resource);
-  if(invoice) {
-   const order=await one(env,'SELECT * FROM billing_orders WHERE id=?',invoice.order_id); await verifyPayment(env,p,order);
-   await run(env,"UPDATE payments SET status=CASE WHEN status IN ('refunded','charged_back') THEN status ELSE ? END,updated_at=? WHERE id=?",Number(p.transaction_amount_refunded)>0?'refunded':p.status,now(),resource);
-   await recomputeMonthly(env,order);
-  } else await applyCreditPayment(env,p);
- }
- else if(b.type==='subscription_preapproval') {
-  const p=await mp(env,`/preapproval/${resource}`),order=await one(env,"SELECT * FROM billing_orders WHERE provider_id=? AND kind='monthly'",resource);
-  if(order && String(p.external_reference)===order.id) {
-   await run(env,'UPDATE billing_orders SET status=? WHERE id=?',String(p.status),order.id);
-   if(['cancelled','paused'].includes(p.status)) await run(env,"UPDATE studios SET monthly_until=NULL,subscription_id=NULL,billing_generation=billing_generation+1,billing_mode='credits' WHERE id=? AND subscription_id=? AND billing_generation=?",order.studio_id,resource,order.generation);
+ const b=await body(request),resource=await signedWebhook(request,env,url,b),kind=String(b.type||'unknown').slice(0,80);
+ let studioId=null;
+ try{
+  if(b.type==='subscription_authorized_payment') {
+   const invoice=await mp(env,`/authorized_payments/${resource}`); if(String(invoice.id)!==resource) fail(400,'Fatura divergente.');
+   const applied=await applyInvoice(env,invoice);studioId=applied?.order?.studio_id||null;
   }
+  else if(b.type==='payment') {
+   const p=await mp(env,`/v1/payments/${resource}`); if(String(p.id)!==resource) fail(400,'Pagamento divergente.');
+   const invoice=await one(env,'SELECT i.order_id FROM subscription_invoices i WHERE i.payment_id=?',resource);
+   if(invoice) {
+    const order=await one(env,'SELECT * FROM billing_orders WHERE id=?',invoice.order_id); studioId=order?.studio_id||null; await verifyPayment(env,p,order);
+    const previous=await one(env,'SELECT status FROM payments WHERE id=?',resource),nextStatus=p.status==='charged_back'?'charged_back':Number(p.transaction_amount_refunded)>0?'refunded':p.status;
+    await run(env,"UPDATE payments SET status=CASE WHEN status IN ('refunded','charged_back') THEN status ELSE ? END,updated_at=? WHERE id=?",nextStatus,now(),resource);
+    await recomputeMonthly(env,order);
+    if(previous?.status!==nextStatus)await audit(env,order.studio_id,null,nextStatus==='charged_back'?'payment_chargeback':nextStatus==='refunded'?'payment_refunded':'payment_status_changed',{order_id:order.id,payment_id:resource,status:nextStatus}).catch(()=>{});
+   } else {
+    const applied=await applyCreditPayment(env,p);studioId=applied?.order?.studio_id||null;
+   }
+  }
+  else if(b.type==='subscription_preapproval') {
+   const p=await mp(env,`/preapproval/${resource}`),order=await one(env,"SELECT * FROM billing_orders WHERE provider_id=? AND kind='monthly'",resource);
+   studioId=order?.studio_id||null;
+   if(order && String(p.external_reference)===order.id) {
+    await run(env,"UPDATE billing_orders SET status=CASE WHEN status='approved' AND ?='authorized' THEN status ELSE ? END WHERE id=?",String(p.status),String(p.status),order.id);
+    if(['cancelled','paused'].includes(p.status)){
+     const changed=await run(env,"UPDATE studios SET monthly_until=NULL,subscription_id=NULL,billing_generation=billing_generation+1,billing_mode='credits' WHERE id=? AND subscription_id=? AND billing_generation=?",order.studio_id,resource,order.generation);
+     if(changed.meta.changes)await audit(env,order.studio_id,null,p.status==='cancelled'?'subscription_cancelled':'subscription_paused',{order_id:order.id,subscription_id:resource}).catch(()=>{});
+    }
+   }
+  }
+  await integrationEvent(env,{studio_id:studioId,provider:'mercadopago',kind,external_id:resource,status:'ok',message:'Webhook válido processado.',details:{type:kind},source_key:`mp:${kind}:${resource}:ok`});
+  return json({ok:true});
+ }catch(error){
+  await integrationEvent(env,{studio_id:studioId,provider:'mercadopago',kind,external_id:resource,status:'error',message:'Falha ao processar uma notificação válida do Mercado Pago.',details:{type:kind,http_status:Number(error?.status||500)},source_key:`mp:${kind}:${resource}:error`}).catch(()=>{});
+  throw error;
  }
- return json({ok:true});
 }
 export async function billingRoutes(request,env,path,url) {
  if(path==='/api/plans' && request.method==='GET') return json({plans:catalog(env)});
