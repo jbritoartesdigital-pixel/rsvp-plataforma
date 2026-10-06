@@ -124,3 +124,33 @@ test('Mercado Pago registra webhook processado sem alterar idempotência de cré
  assert.equal(f.sql('SELECT credits FROM studios WHERE id=?',a.user.studio_id).credits,1);
  assert.equal(f.sql("SELECT COUNT(*) n FROM integration_events WHERE provider='mercadopago' AND external_id='901' AND status='ok'").n,1);
 });
+
+test('aparência mantém isolamento de mídia e duplicação ignora mídia não utilizada',async()=>{
+ const f=fixture(),a=await f.register('midia-a'),b=await f.register('midia-b');
+ f.exec('UPDATE studios SET credits=2 WHERE id=?',a.user.studio_id);
+ f.exec('UPDATE studios SET credits=1 WHERE id=?',b.user.studio_id);
+ const aCreated=await f.request('/api/events','POST',{title:'Evento A',slug:'evento-a'},a.cookie);
+ const bCreated=await f.request('/api/events','POST',{title:'Evento B',slug:'evento-b'},b.cookie);
+ assert.equal(aCreated.status,201);assert.equal(bCreated.status,201);
+ const eventA=aCreated.body.event,eventB=bCreated.body.event,foreignMedia='22222222-2222-4222-8222-222222222222',stamp=new Date().toISOString();
+ const foreignKey=`${b.user.studio_id}/${eventB.id}/${foreignMedia}`;
+ f.mediaStore.set(foreignKey,{bytes:new Uint8Array([7,8,9]).buffer,httpMetadata:{contentType:'image/png'},httpEtag:'foreign'});
+ f.exec("INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)",foreignMedia,eventB.id,b.user.studio_id,foreignKey,'image/png',3,stamp,'background_image','foreign.png');
+
+ const cross=await f.request(`/api/events/${eventA.id}`,'PATCH',{appearance:{background_type:'image',background_url:`/media/${foreignMedia}`}},a.cookie);
+ assert.equal(cross.status,409);
+ assert.equal(JSON.parse(f.sql('SELECT appearance FROM events WHERE id=?',eventA.id).appearance).background_url||'', '');
+
+ const badTemplate=await f.request('/api/templates','POST',{name:'Referência inválida',config:{appearance:{background_type:'image',background_url:`/media/${foreignMedia}`}}},a.cookie);
+ assert.equal(badTemplate.status,400);
+ assert.equal(f.sql('SELECT COUNT(*) n FROM event_templates WHERE studio_id=?',a.user.studio_id).n,0);
+
+ const unusedMedia='33333333-3333-4333-8333-333333333333',unusedKey=`${a.user.studio_id}/${eventA.id}/${unusedMedia}`;
+ f.exec("INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)",unusedMedia,eventA.id,a.user.studio_id,unusedKey,'image/png',3,stamp,'other','unused.png');
+ assert.equal(f.mediaStore.has(unusedKey),false);
+
+ const duplicate=await f.request(`/api/events/${eventA.id}/duplicate`,'POST',{},a.cookie);
+ assert.equal(duplicate.status,201);
+ assert.equal(f.sql('SELECT COUNT(*) n FROM event_media WHERE event_id=?',duplicate.body.event.id).n,0);
+ assert.equal(f.sql('SELECT credits FROM studios WHERE id=?',a.user.studio_id).credits,0);
+});
