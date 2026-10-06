@@ -1,0 +1,33 @@
+name: Diagnosticar cores Davi
+
+on:
+  push:
+    branches:
+      - diag-davi-colors
+    paths:
+      - '.github/workflows/diag-davi-colors.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    environment: commercial
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.19.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Consultar apenas aparência do evento Davi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          pnpm exec wrangler d1 execute DB --remote --command "SELECT e.title, e.slug, e.appearance, s.slug AS studio_slug, s.name AS studio_name FROM events e JOIN studios s ON s.id=e.studio_id WHERE lower(e.title) LIKE '%davi%2%aninho%' OR lower(e.title) LIKE '%davi 2 aninhos%' ORDER BY e.created_at DESC LIMIT 10;"
