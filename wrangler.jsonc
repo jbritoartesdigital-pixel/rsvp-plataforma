@@ -3,7 +3,7 @@
   "name": "rsvp-plataforma",
   "main": "src/index.js",
   "account_id": "89e909b38d8f7cfe1c1583e77a6df55f",
-  "workers_dev": true,
+  "workers_dev": false,
   "compatibility_date": "2026-10-01",
   "compatibility_flags": [
     "nodejs_compat"
@@ -75,5 +75,16 @@
         }
       ]
     }
-  }
+  },
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "app.presencaconfirmada.com.br",
+      "custom_domain": true
+    },
+    {
+      "pattern": "*.presencaconfirmada.com.br/*",
+      "zone_id": "682ae38c7ae33e59b117fef7355b5c1f"
+    }
+  ]
 }
