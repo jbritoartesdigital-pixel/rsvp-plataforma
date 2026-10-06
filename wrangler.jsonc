@@ -68,6 +68,10 @@
         {
           "pattern": "hml.presencaconfirmada.com.br",
           "custom_domain": true
+        },
+        {
+          "pattern": "*.presencaconfirmada.com.br/*",
+          "zone_name": "presencaconfirmada.com.br"
         }
       ]
     }
