@@ -59,13 +59,21 @@ function submit(id,fn) {
 function click(id,fn) {document.querySelector(`#${id}`)?.addEventListener('click',async e=>{e.preventDefault();try{await fn();}catch(err){notice(err.message);}});}
 const RESERVED_SLUGS=new Set(['api','app','admin','q','cliente','planos','termos','privacidade','media']);
 const cleanSlug=value=>{let v=String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,60);if(RESERVED_SLUGS.has(v))v=(v+'-evento').slice(0,60);return v;};
-const tenantSlugFromHost=()=>{
- const host=location.hostname.toLowerCase(),suffix='.presencaconfirmada.com.br';
- if(!host.endsWith(suffix))return null;
- const sub=host.slice(0,-suffix.length);
+const tenantSlugFromHostname=host=>{
+ host=String(host||'').toLowerCase();
+ const hmlSuffix='.hml.presencaconfirmada.com.br',prodSuffix='.presencaconfirmada.com.br';
+ let sub='';
+ if(host.endsWith(hmlSuffix))sub=host.slice(0,-hmlSuffix.length);
+ else if(host.endsWith(prodSuffix))sub=host.slice(0,-prodSuffix.length);
+ else return null;
  return sub&&!['app','hml','www'].includes(sub)&&!sub.includes('.')?sub:null;
 };
-const tenantOrigin=studioSlug=>location.hostname==='localhost'||location.hostname==='127.0.0.1'?location.origin:`https://${cleanSlug(studioSlug)}.presencaconfirmada.com.br`;
+const tenantSlugFromHost=()=>tenantSlugFromHostname(location.hostname);
+const tenantOrigin=studioSlug=>{
+ if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return location.origin;
+ const hml=location.hostname==='hml.presencaconfirmada.com.br'||location.hostname.endsWith('.hml.presencaconfirmada.com.br');
+ return `https://${cleanSlug(studioSlug)}${hml?'.hml':''}.presencaconfirmada.com.br`;
+};
 function bindAutoSlug(sourceName,targetName,previewId){
  const source=document.querySelector(`[name="${sourceName}"]`),target=document.querySelector(`[name="${targetName}"]`),preview=document.querySelector(`#${previewId}`);
  if(!source||!target)return;
