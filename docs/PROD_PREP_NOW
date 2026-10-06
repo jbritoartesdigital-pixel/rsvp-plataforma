@@ -1,2 +1,2 @@
-retry production shell without public routes
-source_head=98fb27fa980be8ab751155f806ee5a698676eec8
+retry production shell from repository root
+source_head=223632c9562ddbe053343eb94d9f48f250d043a4
