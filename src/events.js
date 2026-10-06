@@ -404,7 +404,11 @@ export async function eventsRoutes(request,env,path,url) {
    const events=await all(env,`SELECT e.*,
     (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL) guest_count,
     (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='yes') yes_count,
-    (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='pending') pending_count
+    (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='no') no_count,
+    (SELECT COUNT(*) FROM guests g WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='pending') pending_count,
+    (SELECT COUNT(*) FROM guest_members m JOIN guests g ON g.id=m.guest_id WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='yes' AND m.attendance_status='yes') people_confirmed,
+    (SELECT COUNT(*) FROM guest_members m JOIN guests g ON g.id=m.guest_id WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='yes' AND m.attendance_status='yes' AND m.person_type='adult') adults_confirmed,
+    (SELECT COUNT(*) FROM guest_members m JOIN guests g ON g.id=m.guest_id WHERE g.event_id=e.id AND g.deleted_at IS NULL AND g.response_status='yes' AND m.attendance_status='yes' AND m.person_type='child') children_confirmed
     FROM events e WHERE e.studio_id=? AND e.status ${archived?"='archived'":"<>'archived'"} ORDER BY e.created_at DESC LIMIT 500`,u.studio_id);
    return json({events,entitlement:await eventEntitlement(env,u.studio_id)});
   }
