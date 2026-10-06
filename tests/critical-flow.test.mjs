@@ -414,3 +414,30 @@ test('link privado da cliente usa subdomínio da conviteira',async()=>{
  assert.equal(link.status,200);
  assert.match(link.body.url,/^https:\/\/marca-a\.presencaconfirmada\.com\.br\/cliente\//);
 });
+
+test('hostname da conviteira não cruza eventos nem painel privado entre tenants',async()=>{
+ const f=fixture(),a=await f.register(),b=await f.register('b');
+ f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Evento A',slug:'evento-a'},a.cookie)).body.event;
+ const worker=(await import('../src/index.js')).default;
+
+ const tenantRequest=async(host,path,method='GET',data=null)=>{
+  const response=await worker.fetch(new Request(`https://${host}.presencaconfirmada.com.br${path}`,{
+   method,
+   headers:{origin:`https://${host}.presencaconfirmada.com.br`,...(data?{'content-type':'application/json'}:{})},
+   ...(data?{body:JSON.stringify(data)}:{})
+  }),f.env);
+  return {status:response.status,body:await response.json()};
+ };
+
+ const own=await tenantRequest('marca-a','/api/public/marca-a/evento-a');
+ assert.equal(own.status,200);
+ const crossed=await tenantRequest('marca-b','/api/public/marca-a/evento-a');
+ assert.equal(crossed.status,404);
+
+ const ownClient=await tenantRequest('marca-a',`/api/cliente/${e.client_token}`);
+ assert.equal(ownClient.status,200);
+ const crossedClient=await tenantRequest('marca-b',`/api/cliente/${e.client_token}`);
+ assert.equal(crossedClient.status,404);
+ assert.notEqual(a.user.studio_id,b.user.studio_id);
+});
