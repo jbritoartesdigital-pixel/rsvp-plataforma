@@ -1,1 +1,2 @@
-audit Cloudflare permissions through workers domains
+audit HML tenant namespace
+source_head=5d91c7ddf39fe4ce9a9735f1167ecad530f3f720
