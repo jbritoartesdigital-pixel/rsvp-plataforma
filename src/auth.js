@@ -82,9 +82,9 @@ export async function authRoutes(request,env,path) {
  if(path==='/api/auth/reset/request' && m==='POST') {
   await limit(env,`reset:${request.headers.get('cf-connecting-ip')||'local'}`,5);
   const b=await body(request),u=await one(env,'SELECT id,email FROM users WHERE email=?',text(b.email,254).toLowerCase());
-  if(u && env.MAILER_URL && env.MAILER_TOKEN) {
-   const raw=token(),challenge=id(); await run(env,'INSERT INTO auth_challenges VALUES(?,?,?,?,?)',challenge,u.id,'reset',await hash(raw),new Date(Date.now()+1800000).toISOString());
-   const res=await fetch(env.MAILER_URL,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${env.MAILER_TOKEN}`},body:JSON.stringify({to:u.email,subject:'Recuperar acesso · Presença Confirmada',text:`${env.APP_ORIGIN}/app/reset?token=${raw}`})});
+  if(u && env.MAILER_URL && env.MAILER_TOKEN && env.MAILER_FROM) {
+   const raw=token(),challenge=id(),resetUrl=`${env.APP_ORIGIN}/app/reset?token=${raw}`; await run(env,'INSERT INTO auth_challenges VALUES(?,?,?,?,?)',challenge,u.id,'reset',await hash(raw),new Date(Date.now()+1800000).toISOString());
+   const res=await (env.MAILER_FETCH||fetch)(env.MAILER_URL,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${env.MAILER_TOKEN}`},body:JSON.stringify({from:env.MAILER_FROM,to:[u.email],subject:'Recuperar acesso · Presença Confirmada',text:`Você pediu para redefinir sua senha no Presença Confirmada.\n\nAbra este link para criar uma nova senha:\n${resetUrl}\n\nEste link expira em 30 minutos. Se você não fez este pedido, ignore este e-mail.`,html:`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#332f2d"><h1 style="font-size:24px">Recuperar acesso</h1><p>Você pediu para redefinir sua senha no Presença Confirmada.</p><p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#716864;color:white;text-decoration:none;border-radius:10px">Criar nova senha</a></p><p style="font-size:13px;color:#746d68">Este link expira em 30 minutos. Se você não fez este pedido, ignore este e-mail.</p></div>`})});
    if(!res.ok) { await run(env,'DELETE FROM auth_challenges WHERE id=?',challenge); fail(503,'Envio indisponível.'); }
   }
   return json({ok:true,message:'Se houver uma conta e o envio estiver configurado, você receberá um link.'});
