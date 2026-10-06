@@ -510,12 +510,13 @@ export async function eventsRoutes(request,env,path,url) {
  }
 
  if(path==='/api/templates'){
-  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');owner(u);
+  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
   if(method==='GET'){
    const templates=await all(env,`SELECT t.*,(SELECT COUNT(*) FROM template_media m WHERE m.template_id=t.id) media_count FROM event_templates t WHERE t.studio_id=? ORDER BY t.updated_at DESC`,u.studio_id);
    return json({templates:templates.map(templateData)});
   }
   if(method==='POST'){
+   owner(u);
    const b=await body(request),template=await createTemplate(env,u,b.name,reusableEventConfig(b.config||{}));
    return json({template},201);
   }
@@ -524,7 +525,7 @@ export async function eventsRoutes(request,env,path,url) {
 
  let templateMatch=path.match(/^\/api\/templates\/([^/]+)(?:\/(use))?$/);
  if(templateMatch){
-  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');owner(u);
+  const u=await session(request,env);if(!u.studio)fail(400,'Selecione uma conviteira.');
   const t=await one(env,`SELECT t.*,(SELECT COUNT(*) FROM template_media m WHERE m.template_id=t.id) media_count FROM event_templates t WHERE t.id=? AND t.studio_id=?`,templateMatch[1],u.studio_id);
   if(!t)fail(404,'Modelo não encontrado.');
   if(templateMatch[2]==='use'&&method==='POST'){
@@ -534,6 +535,7 @@ export async function eventsRoutes(request,env,path,url) {
   }
   if(!templateMatch[2]&&method==='GET')return json({template:templateData(t)});
   if(!templateMatch[2]&&method==='PATCH'){
+   owner(u);
    const b=await body(request),nextName=b.name===undefined?t.name:text(b.name,120);
    if(nextName.toLowerCase()!==String(t.name).toLowerCase()&&await one(env,'SELECT id FROM event_templates WHERE studio_id=? AND name=? COLLATE NOCASE AND id<>?',u.studio_id,nextName,t.id))fail(409,'Já existe um modelo com esse nome.');
    const current=parseObject(t.config),nextConfig=b.config===undefined?current:reusableEventConfig({...current,...parseObject(b.config)},current);
@@ -544,6 +546,7 @@ export async function eventsRoutes(request,env,path,url) {
    return json({template:templateData({...t,name:nextName,config:safeObject(nextConfig),updated_at:now()})});
   }
   if(!templateMatch[2]&&method==='DELETE'){
+   owner(u);
    const media=await all(env,'SELECT object_key FROM template_media WHERE template_id=? AND studio_id=?',t.id,u.studio_id);
    await env.DB.batch([
     stmt(env,'DELETE FROM event_templates WHERE id=? AND studio_id=?',t.id,u.studio_id),
@@ -611,6 +614,7 @@ export async function eventsRoutes(request,env,path,url) {
    return json({event},201);
   }
   if(sub==='template'&&method==='POST'){
+   owner(u);
    const b=await body(request),template=await createTemplate(env,u,b.name,reusableConfigFromEvent(e),{sourceEvent:e});
    return json({template},201);
   }
