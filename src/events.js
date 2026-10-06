@@ -533,7 +533,11 @@ export async function eventsRoutes(request,env,path,url) {
     if(b.deadline!==undefined){sets.push('deadline=?');args.push(date(b.deadline));}
     if(b.extra_fields!==undefined){sets.push('extra_fields=?');args.push(safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}));}
    }
-   if(permissions.manage_appearance&&b.appearance!==undefined){sets.push('appearance=?');args.push(safeObject(cleanAppearance(b.appearance,e.appearance)));}
+   if(permissions.manage_appearance&&b.appearance!==undefined){
+    const nextAppearance=cleanAppearance(b.appearance,e.appearance);
+    await assertEventAppearanceMedia(env,e.studio_id,e.id,nextAppearance);
+    sets.push('appearance=?');args.push(safeObject(nextAppearance));
+   }
    if(permissions.manage_texts){
     if(b.welcome_message!==undefined){sets.push('welcome_message=?');args.push(text(b.welcome_message,2000,false));}
     if(b.public_texts!==undefined){sets.push('public_texts=?');args.push(safeObject(b.public_texts));}
@@ -577,6 +581,7 @@ export async function eventsRoutes(request,env,path,url) {
    const b=await body(request),nextName=b.name===undefined?t.name:text(b.name,120);
    if(nextName.toLowerCase()!==String(t.name).toLowerCase()&&await one(env,'SELECT id FROM event_templates WHERE studio_id=? AND name=? COLLATE NOCASE AND id<>?',u.studio_id,nextName,t.id))fail(409,'Já existe um modelo com esse nome.');
    const current=parseObject(t.config),nextConfig=b.config===undefined?current:reusableEventConfig({...current,...parseObject(b.config)},current);
+   await assertTemplateAppearanceMedia(env,u.studio_id,t.id,nextConfig.appearance);
    await env.DB.batch([
     stmt(env,'UPDATE event_templates SET name=?,config=?,updated_at=? WHERE id=? AND studio_id=?',nextName,safeObject(nextConfig),now(),t.id,u.studio_id),
     stmt(env,'INSERT INTO audit_logs(id,studio_id,actor_id,action,details,created_at,event_id,guest_id) VALUES(?,?,?,?,?,?,NULL,NULL)',id(),u.studio_id,u.id,'template_updated',JSON.stringify({template_id:t.id}),now())
@@ -632,6 +637,8 @@ export async function eventsRoutes(request,env,path,url) {
    const b=await body(request);
    const nextStatus=choice(b.status??e.status,['active','inactive','archived']),nextMode=choice(b.rsvp_mode??e.rsvp_mode,['free','list']);
    const currentLimit=eventPeopleLimit(e),nextLimit=nextMode==='list'?(b.max_people===undefined?(currentLimit??10):(nullablePeopleLimit(b.max_people)??10)):(b.max_people===undefined?currentLimit:nullablePeopleLimit(b.max_people));
+   const nextAppearance=b.appearance?cleanAppearance(b.appearance,e.appearance):parseObject(e.appearance);
+   if(b.appearance)await assertEventAppearanceMedia(env,u.studio_id,e.id,nextAppearance);
    await run(env,`UPDATE events SET
     title=?,event_date=?,location=?,deadline=?,status=?,rsvp_mode=?,list_behavior=?,max_people=?,max_people_limit=?,checkin_mode=?,
     appearance=?,extra_fields=?,public_texts=?,client_permissions=?,welcome_message=?,archived_at=?
@@ -639,7 +646,7 @@ export async function eventsRoutes(request,env,path,url) {
     text(b.title??e.title),date(b.event_date??e.event_date),text(b.location??e.location,300,false),date(b.deadline===undefined?e.deadline:b.deadline),
     nextStatus,nextMode,choice(b.list_behavior??e.list_behavior,['strict','flexible']),
     nextLimit??100,nextLimit,choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
-    b.appearance?safeObject(cleanAppearance(b.appearance,e.appearance)):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
+    b.appearance?safeObject(nextAppearance):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
     b.public_texts?safeObject(b.public_texts):e.public_texts,b.client_permissions?safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS)):e.client_permissions,text(b.welcome_message??e.welcome_message,2000,false),
     nextStatus==='archived'?(e.archived_at||now()):null,e.id,u.studio_id);
    await audit(env,u.studio_id,u.id,'update_event',{event_id:e.id,status:nextStatus});
