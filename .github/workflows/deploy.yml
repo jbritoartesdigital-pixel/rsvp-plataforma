@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'deploy: production v3 once'
+    if: >-
+      github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'deploy: production v3 once'
     runs-on: ubuntu-latest
     environment: commercial
     steps:
