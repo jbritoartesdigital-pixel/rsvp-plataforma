@@ -1,0 +1,48 @@
+name: Configurar DNS Resend
+on:
+  push:
+    branches: [main]
+    paths: [docs/RESEND_DNS_NOW]
+permissions:
+  contents: read
+jobs:
+  dns:
+    runs-on: ubuntu-latest
+    environment: commercial
+    steps:
+      - name: Criar registros DNS do Resend com proteção contra conflito
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          zone="682ae38c7ae33e59b117fef7355b5c1f"
+          api="https://api.cloudflare.com/client/v4/zones/$zone/dns_records"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+
+          ensure_record() {
+            type="$1"; name="$2"; content="$3"; proxied="$4"
+            existing="$(curl -fsS "${auth[@]}" "$api?name=$name")"
+            count="$(jq '.result | length' <<<"$existing")"
+            if [ "$count" -gt 1 ]; then
+              echo "Conflito: múltiplos registros em $name"; exit 1
+            fi
+            if [ "$count" = "1" ]; then
+              etype="$(jq -r '.result[0].type' <<<"$existing")"
+              econtent="$(jq -r '.result[0].content' <<<"$existing")"
+              if [ "$etype" != "$type" ]; then
+                echo "Conflito de tipo em $name: $etype"; exit 1
+              fi
+              if [ "$econtent" != "$content" ]; then
+                echo "Conflito de conteúdo em $name"; exit 1
+              fi
+              echo "OK existente: $name"
+              return
+            fi
+            body="$(jq -nc --arg type "$type" --arg name "$name" --arg content "$content" --argjson proxied "$proxied" '{type:$type,name:$name,content:$content,ttl:1,proxied:$proxied}')"
+            curl -fsS -X POST "${auth[@]}" --data "$body" "$api" | jq -e '.success == true' >/dev/null
+            echo "Criado: $name"
+          }
+
+          ensure_record TXT "resend._domainkey.presencaconfirmada.com.br" "p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDKWskGI6XiDbV2xeutNmfo8UqVD6mY/AqqHVbhlfxapmSW0HbnlzILSnzIVvu7IGvjcfZ5L4XZnO5xVSUq3g5qvMob2E8WYExbFmzjZA5beWKkTgM1/xLuxL1FgERsgvS5Jyscs44Mgu3BVEZpH9jh4UXOpv9qnYtLZyeT/YICJwIDAQAB" false
+          ensure_record CNAME "rsend.presencaconfirmada.com.br" "rsend-sae1.forge.rmta.net" false
+          ensure_record CNAME "send.presencaconfirmada.com.br" "send.forge.rmta.net" false
