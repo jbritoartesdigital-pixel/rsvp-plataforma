@@ -1,2 +1,2 @@
-verify new Cloudflare token and HML wildcard DNS
-source_head=3b94c112e2515215e02b2b15c14931988828431e
+audit all Cloudflare permissions after secret update
+source_head=50a8b982275cc7f4b9ce0703f2c9a279c0929c5b
