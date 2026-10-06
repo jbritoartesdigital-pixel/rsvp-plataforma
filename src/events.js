@@ -254,7 +254,15 @@ function reusableEventConfig(value,current={}) {
   list_behavior:choice(raw.list_behavior??base.list_behavior??'strict',['strict','flexible']),
   max_people:maxPeople,
   checkin_mode:choice(raw.checkin_mode??base.checkin_mode??'off',['off','family','individual']),
-  appearance:cleanAppearance(raw.appearance??base.appearance??{},base.appearance??{}),
+  appearance:(()=>{
+   const baseAppearance=parseObject(base.appearance),rawAppearance=raw.appearance===undefined?null:parseObject(raw.appearance);
+   if(rawAppearance===null)return baseAppearance;
+   const cleaned=cleanAppearance(rawAppearance,baseAppearance);
+   for(const key of ['background_url','cover_url','logo_url','background']){
+    if(typeof rawAppearance[key]==='string'&&/^template:[a-f0-9-]+$/i.test(rawAppearance[key])&&rawAppearance[key]===baseAppearance[key])cleaned[key]=rawAppearance[key];
+   }
+   return cleaned;
+  })(),
   welcome_message:text(raw.welcome_message??base.welcome_message??'',2000,false),
   extra_fields:{...DEFAULT_EXTRA_FIELDS,...boolObject(parseObject(raw.extra_fields??base.extra_fields),DEFAULT_EXTRA_FIELDS)},
   public_texts:parseObject(raw.public_texts??base.public_texts),
@@ -327,7 +335,8 @@ async function insertEvent(env,u,b,{copyOf=null,templateId=null}={}) {
 }
 
 async function insertEventWithCopiedMedia(env,u,b,{sourceEvent=null,sourceTemplate=null}={}) {
- const p={...(await prepareEvent(env,u,b)),studio_id:u.studio_id};
+ const sourceAppearance=parseObject(b.appearance);
+ const p={...(await prepareEvent(env,u,{...b,appearance:{}})),studio_id:u.studio_id};
  let rows=[],sourceRef;
  if(sourceEvent){
   rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL ORDER BY created_at',sourceEvent.id,u.studio_id);
@@ -338,7 +347,7 @@ async function insertEventWithCopiedMedia(env,u,b,{sourceEvent=null,sourceTempla
  }
  const copied=await copyMediaObjects(env,rows,`${u.studio_id}/${p.eventId}`,sourceRef);
  const urlMap=new Map([...copied.map.entries()].map(([oldRef,newId])=>[oldRef,`/media/${newId}`]));
- const rawAppearance=remapAppearance(parseObject(p.appearance),urlMap);
+ const rawAppearance=remapAppearance(sourceAppearance,urlMap);
  p.appearance=safeObject(cleanAppearance(rawAppearance));
  const queries=[eventInsertStmt(env,p)];
  for(const media of copied.statements)queries.push(stmt(env,'INSERT INTO event_media(id,event_id,studio_id,object_key,mime_type,size_bytes,created_at,media_kind,original_name,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,NULL)',media.id,p.eventId,u.studio_id,media.object_key,media.mime_type,media.size_bytes,p.created,media.media_kind,media.original_name));
@@ -519,7 +528,7 @@ export async function eventsRoutes(request,env,path,url) {
   const t=await one(env,`SELECT t.*,(SELECT COUNT(*) FROM template_media m WHERE m.template_id=t.id) media_count FROM event_templates t WHERE t.id=? AND t.studio_id=?`,templateMatch[1],u.studio_id);
   if(!t)fail(404,'Modelo não encontrado.');
   if(templateMatch[2]==='use'&&method==='POST'){
-   const b=await body(request),config=reusableEventConfig(parseObject(t.config));
+   const b=await body(request),config=parseObject(t.config);
    const event=await insertEventWithCopiedMedia(env,u,{...config,title:b.title,slug:b.slug,event_date:b.event_date,location:b.location,deadline:b.deadline},{sourceTemplate:t});
    return json({event},201);
   }
