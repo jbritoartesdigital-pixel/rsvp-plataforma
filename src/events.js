@@ -314,7 +314,11 @@ export async function eventsRoutes(request,env,path,url) {
  match=path.match(/^\/api\/q\/([^/]+)$/);
  if(match&&method==='GET'){
   const qr=await validQR(env,match[1]);
-  return json({name:qr.name,event_title:qr.title,token:match[1],checked_in:!!await one(env,'SELECT id FROM checkins WHERE subject_key=?',qr.subject)});
+  const checkin=await one(env,'SELECT id,created_at FROM checkins WHERE subject_key=?',qr.subject);
+  const members=qr.member_id
+   ?[{id:qr.member_id,name:qr.name,person_type:qr.person_type||'adult'}]
+   :await all(env,"SELECT id,name,person_type FROM guest_members WHERE guest_id=? AND attendance_status='yes' ORDER BY rowid",qr.guest_id);
+  return json({name:qr.name,group_label:qr.group_label||'',event_title:qr.title,token:match[1],mode:qr.member_id?'individual':'family',members,checked_in:!!checkin,checked_in_at:checkin?.created_at||null});
  }
 
  match=path.match(/^\/api\/cliente\/([^/]+)(?:\/(guests|event|media)(?:\/([^/]+))?)?$/);
@@ -562,9 +566,9 @@ export async function eventsRoutes(request,env,path,url) {
 }
 
 export async function validQR(env,raw) {
- const g=await one(env,`SELECT g.id guest_id,g.name,g.event_id,e.title,e.checkin_mode,g.qr_token FROM guests g JOIN events e ON e.id=g.event_id JOIN studios s ON s.id=e.studio_id WHERE g.qr_token=? AND g.response_status='yes' AND g.deleted_at IS NULL AND e.checkin_mode='family' AND e.status='active' AND s.status='active'`,raw);
+ const g=await one(env,`SELECT g.id guest_id,g.name,g.group_label,g.event_id,e.title,e.checkin_mode,g.qr_token FROM guests g JOIN events e ON e.id=g.event_id JOIN studios s ON s.id=e.studio_id WHERE g.qr_token=? AND g.response_status='yes' AND g.deleted_at IS NULL AND e.checkin_mode='family' AND e.status='active' AND s.status='active'`,raw);
  if(g)return {...g,member_id:null,subject:`guest:${g.guest_id}`};
- const m=await one(env,`SELECT m.id member_id,m.name,g.id guest_id,g.event_id,e.title FROM guest_members m JOIN guests g ON g.id=m.guest_id JOIN events e ON e.id=g.event_id JOIN studios s ON s.id=e.studio_id WHERE m.qr_token=? AND m.attendance_status='yes' AND g.response_status='yes' AND g.deleted_at IS NULL AND e.checkin_mode='individual' AND e.status='active' AND s.status='active'`,raw);
+ const m=await one(env,`SELECT m.id member_id,m.name,m.person_type,g.id guest_id,g.group_label,g.event_id,e.title FROM guest_members m JOIN guests g ON g.id=m.guest_id JOIN events e ON e.id=g.event_id JOIN studios s ON s.id=e.studio_id WHERE m.qr_token=? AND m.attendance_status='yes' AND g.response_status='yes' AND g.deleted_at IS NULL AND e.checkin_mode='individual' AND e.status='active' AND s.status='active'`,raw);
  if(m)return {...m,subject:`member:${m.member_id}`};
  fail(403,'QR inválido ou presença não confirmada.');
 }

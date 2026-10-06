@@ -1209,3 +1209,18 @@ body.modal-open{overflow:hidden}
  .client-event-tabs{margin-left:0;margin-right:0}
  .client-appearance-workspace .appearance-sticky-preview{order:-1}
 }
+
+/* QR/check-in confirmation flow */
+.qr-manage-list{display:grid;gap:14px}
+.qr-manage-card{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.qr-frame.compact{margin:0 auto;padding:9px}.qr-frame.compact .qr{width:190px;height:190px}
+.qr-authorized{margin:0 auto 16px;max-width:320px;text-align:left}
+.qr-authorized>strong{display:block;margin-bottom:7px}
+.qr-authorized ul,.scan-people{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.qr-authorized li,.scan-people li{display:flex;justify-content:space-between;gap:12px;padding:9px 11px;border-bottom:1px solid var(--line)}
+.qr-authorized li:last-child,.scan-people li:last-child{border-bottom:0}
+.qr-authorized small,.scan-people small{color:var(--muted)}
+.scan-result{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff}
+.scan-result-head h3{margin:8px 0 2px}.scan-result-head p{margin:0 0 10px;color:var(--muted)}
+.scan-result .notice{display:grid;gap:4px;margin:12px 0}
+@media(max-width:520px){.qr-manage-card .event-link-actions{display:grid;grid-template-columns:1fr}.qr-manage-card .event-link-actions>*{width:100%}}

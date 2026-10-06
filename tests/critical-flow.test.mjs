@@ -457,3 +457,13 @@ test('hostname da conviteira não cruza eventos nem painel privado entre tenants
  assert.equal(crossedClient.status,404);
  assert.notEqual(a.user.studio_id,b.user.studio_id);
 });
+
+test('QR familiar expõe pessoas autorizadas e marca uso sem segundo check-in',async()=>{
+ const f=fixture(),a=await f.register();f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'QR Família',slug:'qr-familia',checkin_mode:'family'},a.cookie)).body.event;
+ const rsvp=await f.request('/api/public/marca-a/qr-familia/rsvp','POST',{name:'Maria',response_status:'yes',members:[{name:'Maria',person_type:'adult',attendance_status:'yes'},{name:'Bia',person_type:'child',attendance_status:'yes'}]});
+ const g=rsvp.body.guest,q1=await f.request(`/api/q/${g.qr_token}`);
+ assert.equal(q1.status,200);assert.equal(q1.body.mode,'family');assert.deepEqual(q1.body.members.map(x=>x.name),['Maria','Bia']);assert.equal(q1.body.checked_in,false);
+ await f.request(`/api/events/${e.id}/checkins`,'POST',{token:g.qr_token},a.cookie);
+ const q2=await f.request(`/api/q/${g.qr_token}`);assert.equal(q2.body.checked_in,true);assert.ok(q2.body.checked_in_at);
+});
