@@ -1,6 +1,9 @@
-name: Auditar DNS HML
+name: Verificar token Cloudflare HML
 
 on:
+  push:
+    branches: [main]
+    paths: [docs/CLOUDFLARE_PERMISSIONS_AUDIT_NOW]
   workflow_dispatch:
 
 permissions:
@@ -9,18 +12,62 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
+    environment: commercial
     steps:
       - uses: actions/checkout@v4
-      - name: Consultar resolução pública do namespace HML
+
+      - name: Verificar permissões e preparar wildcard DNS HML
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
-          random_host="slug-audit-$(date -u +%Y%m%d%H%M%S).hml.presencaconfirmada.com.br"
-          hml_a="$(dig +short hml.presencaconfirmada.com.br A | paste -sd, -)"
-          hml_aaaa="$(dig +short hml.presencaconfirmada.com.br AAAA | paste -sd, -)"
-          tenant_a="$(dig +short "$random_host" A | paste -sd, -)"
-          tenant_aaaa="$(dig +short "$random_host" AAAA | paste -sd, -)"
-          hml_code="$(curl -L -sS -o /tmp/hml.html -w '%{http_code}' --max-time 15 https://hml.presencaconfirmada.com.br/ || true)"
-          tenant_code="$(curl -L -sS -o /tmp/tenant.html -w '%{http_code}' --max-time 15 "https://$random_host/" || true)"
-          printf 'HML root: A=%s AAAA=%s HTTP=%s\n' "$hml_a" "$hml_aaaa" "$hml_code"
-          printf 'HML tenant: host=%s A=%s AAAA=%s HTTP=%s\n' "$random_host" "$tenant_a" "$tenant_aaaa" "$tenant_code"
-          test -n "$hml_a$hml_aaaa"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+
+          zones_tmp="$(mktemp)"
+          zone_code="$(curl -sS -o "$zones_tmp" -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=presencaconfirmada.com.br")"
+          echo "zone_read_http=$zone_code"
+          test "$zone_code" = "200"
+
+          zone_id="$(jq -r '.result[0].id // empty' "$zones_tmp")"
+          test -n "$zone_id"
+          echo "zone_id=$zone_id"
+
+          dns_tmp="$(mktemp)"
+          dns_code="$(curl -sS -o "$dns_tmp" -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?name=%2A.hml.presencaconfirmada.com.br")"
+          echo "dns_read_http=$dns_code"
+          test "$dns_code" = "200"
+
+          routes_tmp="$(mktemp)"
+          routes_code="$(curl -sS -o "$routes_tmp" -w '%{http_code}' "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          echo "routes_read_http=$routes_code"
+          test "$routes_code" = "200"
+
+          existing_count="$(jq '.result | length' "$dns_tmp")"
+          if [ "$existing_count" -eq 0 ]; then
+            create_tmp="$(mktemp)"
+            create_code="$(curl -sS -o "$create_tmp" -w '%{http_code}' -X POST "${auth[@]}"               "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records"               --data '{"type":"AAAA","name":"*.hml.presencaconfirmada.com.br","content":"100::","ttl":1,"proxied":true}')"
+            echo "dns_create_http=$create_code"
+            test "$create_code" = "200"
+            jq -e '.success == true' "$create_tmp" >/dev/null
+            echo "wildcard_dns=created"
+          else
+            echo "wildcard_dns=already_exists"
+            jq -r '.result[] | "dns_type=" + .type + " dns_name=" + .name + " proxied=" + (.proxied|tostring)' "$dns_tmp"
+          fi
+
+          route_match="$(jq -r '[.result[] | select(.pattern=="*.hml.presencaconfirmada.com.br/*")] | length' "$routes_tmp")"
+          echo "hml_wildcard_route_count=$route_match"
+
+      - name: Confirmar resolução pública do wildcard
+        run: |
+          set -euo pipefail
+          host="slug-audit-$(date -u +%Y%m%d%H%M%S).hml.presencaconfirmada.com.br"
+          resolved=""
+          for i in 1 2 3 4 5 6; do
+            resolved="$(dig +short "$host" A; dig +short "$host" AAAA)"
+            if [ -n "$resolved" ]; then break; fi
+            sleep 5
+          done
+          echo "wildcard_test_host=$host"
+          printf 'resolved=%s\n' "$resolved"
+          test -n "$resolved"
