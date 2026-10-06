@@ -287,6 +287,41 @@ function remapAppearance(appearance,map) {
  return next;
 }
 
+function appearanceMediaIds(appearance,kind='event') {
+ const result=new Set(),a=parseObject(appearance);
+ const pattern=kind==='template'?/^template:([a-f0-9-]+)$/i:/^\/media\/([a-f0-9-]+)$/i;
+ for(const key of ['background_url','cover_url','logo_url','background']){
+  const match=String(a[key]||'').match(pattern);
+  if(match)result.add(match[1]);
+ }
+ return result;
+}
+
+async function reusableMediaRows(env,{studioId,eventId=null,templateId=null,appearance={}}) {
+ const eventIds=appearanceMediaIds(appearance,'event'),templateIds=appearanceMediaIds(appearance,'template');
+ if(eventId&&templateIds.size)fail(409,'A aparência do evento contém uma referência de mídia inválida.');
+ if(templateId&&eventIds.size)fail(409,'O modelo contém uma referência de mídia que não pertence à biblioteca do modelo.');
+ if(!eventId&&!templateId&&(eventIds.size||templateIds.size))fail(400,'Vincule mídias somente dentro do evento ou salvando um evento como modelo.');
+ const ids=[...(eventId?eventIds:templateIds)];
+ if(!ids.length)return [];
+ const marks=ids.map(()=>'?').join(',');
+ const rows=eventId
+  ?await all(env,`SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL AND id IN (${marks}) ORDER BY created_at`,eventId,studioId,...ids)
+  :await all(env,`SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM template_media WHERE template_id=? AND studio_id=? AND id IN (${marks}) ORDER BY created_at`,templateId,studioId,...ids);
+ if(rows.length!==ids.length)fail(409,'Uma mídia usada nesta configuração não pertence a este evento/modelo ou já foi removida.');
+ return rows;
+}
+
+async function assertEventAppearanceMedia(env,studioId,eventId,appearance) {
+ await reusableMediaRows(env,{studioId,eventId,appearance});
+ return appearance;
+}
+
+async function assertTemplateAppearanceMedia(env,studioId,templateId,appearance) {
+ await reusableMediaRows(env,{studioId,templateId,appearance});
+ return appearance;
+}
+
 async function copyMediaObjects(env,rows,targetPrefix,sourceRef) {
  const uploaded=[],statements=[],map=new Map();
  try{
@@ -326,6 +361,7 @@ const eventInsertStmt=(env,p)=>stmt(env,`INSERT INTO events(id,studio_id,title,s
 
 async function insertEvent(env,u,b,{copyOf=null,templateId=null}={}) {
  const p={...(await prepareEvent(env,u,b)),studio_id:u.studio_id};
+ await reusableMediaRows(env,{studioId:u.studio_id,appearance:parseObject(p.appearance)});
  await run(env,`INSERT INTO events(id,studio_id,title,slug,event_date,location,deadline,status,rsvp_mode,max_people,checkin_mode,appearance,welcome_message,client_token,client_permissions,created_at,list_behavior,extra_fields,public_texts,max_people_limit,archived_at)
  VALUES(?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
   p.eventId,p.studio_id,p.title,p.eventSlug,p.event_date,p.location,p.deadline,p.rsvp_mode,p.max_people??100,p.checkin_mode,
@@ -339,10 +375,10 @@ async function insertEventWithCopiedMedia(env,u,b,{sourceEvent=null,sourceTempla
  const p={...(await prepareEvent(env,u,{...b,appearance:{}})),studio_id:u.studio_id};
  let rows=[],sourceRef;
  if(sourceEvent){
-  rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL ORDER BY created_at',sourceEvent.id,u.studio_id);
+  rows=await reusableMediaRows(env,{studioId:u.studio_id,eventId:sourceEvent.id,appearance:sourceAppearance});
   sourceRef=row=>`/media/${row.id}`;
  }else if(sourceTemplate){
-  rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM template_media WHERE template_id=? AND studio_id=? ORDER BY created_at',sourceTemplate.id,u.studio_id);
+  rows=await reusableMediaRows(env,{studioId:u.studio_id,templateId:sourceTemplate.id,appearance:sourceAppearance});
   sourceRef=row=>`template:${row.id}`;
  }
  const copied=await copyMediaObjects(env,rows,`${u.studio_id}/${p.eventId}`,sourceRef);
@@ -364,9 +400,11 @@ async function createTemplate(env,u,name,config,{sourceEvent=null}={}) {
  const templateId=id(),stamp=now(),baseConfig=reusableEventConfig(config);
  let copied={uploaded:[],statements:[],map:new Map()};
  if(sourceEvent){
-  const rows=await all(env,'SELECT id,object_key,mime_type,size_bytes,media_kind,original_name FROM event_media WHERE event_id=? AND studio_id=? AND deleted_at IS NULL ORDER BY created_at',sourceEvent.id,u.studio_id);
+  const rows=await reusableMediaRows(env,{studioId:u.studio_id,eventId:sourceEvent.id,appearance:baseConfig.appearance});
   copied=await copyMediaObjects(env,rows,`templates/${u.studio_id}/${templateId}`,row=>`/media/${row.id}`);
   baseConfig.appearance=remapAppearance(baseConfig.appearance,new Map([...copied.map.entries()].map(([oldRef,newId])=>[oldRef,`template:${newId}`])));
+ }else{
+  await reusableMediaRows(env,{studioId:u.studio_id,appearance:baseConfig.appearance});
  }
  const queries=[stmt(env,'INSERT INTO event_templates(id,studio_id,name,config,created_at,updated_at) VALUES(?,?,?,?,?,?)',templateId,u.studio_id,cleanName,safeObject(baseConfig),stamp,stamp)];
  for(const media of copied.statements)queries.push(stmt(env,'INSERT INTO template_media(id,template_id,studio_id,object_key,mime_type,size_bytes,media_kind,original_name,created_at) VALUES(?,?,?,?,?,?,?,?,?)',media.id,templateId,u.studio_id,media.object_key,media.mime_type,media.size_bytes,media.media_kind,media.original_name,stamp));
