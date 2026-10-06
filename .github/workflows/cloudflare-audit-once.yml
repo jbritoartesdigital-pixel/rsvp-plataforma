@@ -1,19 +1,16 @@
-name: Auditar DNS HML uma vez
+name: Auditar DNS HML
 
 on:
-  push:
-    branches: [main]
-    paths: [docs/CLOUDFLARE_PERMISSIONS_AUDIT_NOW]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Consultar resolução pública do namespace HML
         run: |
           set -euo pipefail
@@ -24,22 +21,6 @@ jobs:
           tenant_aaaa="$(dig +short "$random_host" AAAA | paste -sd, -)"
           hml_code="$(curl -L -sS -o /tmp/hml.html -w '%{http_code}' --max-time 15 https://hml.presencaconfirmada.com.br/ || true)"
           tenant_code="$(curl -L -sS -o /tmp/tenant.html -w '%{http_code}' --max-time 15 "https://$random_host/" || true)"
-          hml_title="$(grep -oi '<title>[^<]*' /tmp/hml.html 2>/dev/null | head -1 | sed 's/<title>//I' || true)"
-          tenant_title="$(grep -oi '<title>[^<]*' /tmp/tenant.html 2>/dev/null | head -1 | sed 's/<title>//I' || true)"
-          jq -n \
-            --arg checked_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg random_host "$random_host" \
-            --arg hml_a "$hml_a" --arg hml_aaaa "$hml_aaaa" \
-            --arg tenant_a "$tenant_a" --arg tenant_aaaa "$tenant_aaaa" \
-            --arg hml_code "$hml_code" --arg tenant_code "$tenant_code" \
-            --arg hml_title "$hml_title" --arg tenant_title "$tenant_title" \
-            '{checked_at:$checked_at,random_host:$random_host,hml:{a:$hml_a,aaaa:$hml_aaaa,http_code:$hml_code,title:$hml_title},tenant_hml:{a:$tenant_a,aaaa:$tenant_aaaa,http_code:$tenant_code,title:$tenant_title}}' \
-            > docs/cloudflare-hml-audit-result.json
-
-      - name: Registrar resultado sanitizado
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/cloudflare-hml-audit-result.json
-          git commit -m "ci: record HML wildcard DNS audit" || exit 0
-          git push
+          printf 'HML root: A=%s AAAA=%s HTTP=%s\n' "$hml_a" "$hml_aaaa" "$hml_code"
+          printf 'HML tenant: host=%s A=%s AAAA=%s HTTP=%s\n' "$random_host" "$tenant_a" "$tenant_aaaa" "$tenant_code"
+          test -n "$hml_a$hml_aaaa"
