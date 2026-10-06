@@ -2113,7 +2113,7 @@ body[data-shell="app"]>header .header-logout{cursor:pointer}
  padding:27px 30px 30px;
  border:0;
  border-radius:30px;
- background:linear-gradient(135deg,var(--workspace-accent),var(--workspace-soft))!important;
+ background:linear-gradient(135deg,var(--workspace-accent),color-mix(in srgb,var(--workspace-accent),white 34%))!important;
  box-shadow:0 18px 45px color-mix(in srgb,var(--workspace-accent),transparent 80%);
 }
 .event-hero.libri-parity-event-hero:after{
@@ -2121,12 +2121,12 @@ body[data-shell="app"]>header .header-logout{cursor:pointer}
  box-shadow:0 0 0 24px rgba(255,255,255,.06);
 }
 .event-hero.libri-parity-event-hero .eyebrow{
- color:#fff!important;
+ color:var(--workspace-text,#fff)!important;
  letter-spacing:.18em;
 }
 .event-hero.libri-parity-event-hero h1{
  margin:7px 0 7px;
- color:#fff!important;
+ color:var(--workspace-text,#fff)!important;
  font-family:Georgia,"Times New Roman",serif;
  font-size:clamp(34px,6vw,48px);
  font-weight:500;
@@ -2135,7 +2135,7 @@ body[data-shell="app"]>header .header-logout{cursor:pointer}
 }
 .event-hero.libri-parity-event-hero p{
  margin:0;
- color:rgba(255,255,255,.88)!important;
+ color:color-mix(in srgb,var(--workspace-text,#fff),transparent 12%)!important;
  font-size:14px;
  line-height:1.5;
 }
@@ -2495,4 +2495,31 @@ body[data-shell="app"]>header .header-logout{cursor:pointer}
  }
  .tenant-dashboard-hero{padding:25px 24px}
  .tenant-dashboard-copy h1{font-size:43px}
+}
+
+
+/* V3.2.1 · fine polish from real mobile screenshots */
+@media(max-width:719px){
+ .modal-backdrop{
+  align-items:end;
+  padding:
+   max(10px,env(safe-area-inset-top))
+   12px
+   max(10px,env(safe-area-inset-bottom));
+  overflow:hidden;
+ }
+ .json-modal{
+  width:100%;
+  max-height:calc(100dvh - max(20px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  padding:22px 18px calc(24px + env(safe-area-inset-bottom));
+  scroll-padding-top:22px;
+  scroll-padding-bottom:32px;
+ }
+ .json-modal>h2{
+  margin-top:2px;
+  padding-top:0;
+ }
 }
