@@ -126,7 +126,8 @@ function normalizeEventJson(raw){
  const deadline=jsonDate(raw.deadline||raw.rsvp_deadline);if(deadline)payload.deadline=deadline;
  if(['free','list'].includes(raw.rsvp_mode))payload.rsvp_mode=raw.rsvp_mode;
  if(['strict','flexible'].includes(raw.list_behavior))payload.list_behavior=raw.list_behavior;
- const max=Number(raw.max_people??raw.max_people_per_rsvp);if(Number.isInteger(max)&&max>=1&&max<=100)payload.max_people=max;
+ const maxRaw=raw.max_people!==undefined?raw.max_people:raw.max_people_per_rsvp;
+ if(maxRaw!==undefined){if(maxRaw===null||maxRaw==='')payload.max_people=null;else{const max=Number(maxRaw);if(Number.isInteger(max)&&max>=1&&max<=100)payload.max_people=max;}}
  if(['off','family','individual'].includes(raw.checkin_mode))payload.checkin_mode=raw.checkin_mode;
  if(['active','inactive','archived'].includes(raw.status))payload.status=raw.status;
  if(raw.extra_fields&&typeof raw.extra_fields==='object'&&!Array.isArray(raw.extra_fields)){payload.extra_fields={...raw.extra_fields};if(raw.extra_fields.love_message!==undefined&&raw.extra_fields.message===undefined)payload.extra_fields.message=!!raw.extra_fields.love_message;delete payload.extra_fields.love_message;}
@@ -147,7 +148,7 @@ function normalizeEventJson(raw){
 function exportEventJson(e){
  const appearance=parseObj(e.appearance),extra_fields={...DEFAULT_EXTRA_FIELDS,...parseObj(e.extra_fields)},public_texts=parseObj(e.public_texts),client_permissions={...DEFAULT_CLIENT_PERMISSIONS,...parseObj(e.client_permissions)};
  const cleanAppearance={...appearance};for(const k of ['background_url','cover_url','logo_url'])delete cleanAppearance[k];cleanAppearance.background_type='none';
- return {schema_version:2,source:'presenca-confirmada',exported_at:new Date().toISOString(),title:e.title,event_date:e.event_date||null,location:e.location||'',deadline:e.deadline||null,rsvp_mode:e.rsvp_mode||'free',list_behavior:e.list_behavior||'strict',max_people:Number(e.max_people||10),checkin_mode:e.checkin_mode||'off',status:e.status||'active',appearance:cleanAppearance,extra_fields,public_texts,client_permissions,welcome_message:e.welcome_message||''};
+ return {schema_version:2,source:'presenca-confirmada',exported_at:new Date().toISOString(),title:e.title,event_date:e.event_date||null,location:e.location||'',deadline:e.deadline||null,rsvp_mode:e.rsvp_mode||'free',list_behavior:e.list_behavior||'strict',max_people:e.max_people??null,checkin_mode:e.checkin_mode||'off',status:e.status||'active',appearance:cleanAppearance,extra_fields,public_texts,client_permissions,welcome_message:e.welcome_message||''};
 }
 function downloadJson(filename,data){
  const a=document.createElement('a');
@@ -185,7 +186,8 @@ function openJsonImport(eventId=null,currentEvent=null,done=null){
       await api(`/api/events/${eventId}`,'PATCH',update);
       closeJsonModal();notice('Configuração JSON aplicada.');if(done)await done();
      }else{
-      const body={...payload,slug:cleanSlug(payload.title),rsvp_mode:payload.rsvp_mode||'free',max_people:payload.max_people||10,checkin_mode:payload.checkin_mode||'off'};
+      const mode=payload.rsvp_mode||'free',body={...payload,slug:cleanSlug(payload.title),rsvp_mode:mode,checkin_mode:payload.checkin_mode||'off'};
+      if(mode==='list'&&(body.max_people===undefined||body.max_people===null))body.max_people=10;
       try{
        const {event}=await api('/api/events','POST',body);closeJsonModal();goto(`/app/eventos/${event.id}`);
       }catch(err){
@@ -435,22 +437,33 @@ function bindAppearancePreview(previewId,formEl,e,baseAppearance,texts=eventText
  if(state){state.textContent='✓ Tudo salvo';state.classList.remove('dirty');}
 }
 function guestInternalEditor(e,g,endpoint,done,mode='internal'){
- const members=g?.members||[];
- const fields=field('name','Nome do responsável','text',g?.name||'')+field('group_label','Nome da família/grupo · opcional','text',g?.group_label||'',false)+field('phone','WhatsApp · opcional','tel',g?.phone||'',false)+field('max_people','Limite total','number',g?.max_people||e.max_people)+field('max_adults_allowed','Máximo de adultos · opcional','number',g?.max_adults_allowed??'',false)+field('max_children_allowed','Máximo de crianças · opcional','number',g?.max_children_allowed??'',false)+select('response_status','Status geral',[['yes','Confirmado'],['no','Não vai'],['pending','Pendente']],g?.response_status||'pending')+`<label><span class="field-label">Pessoas da família</span><textarea name="members" placeholder="Maria; adulto; sim&#10;Pedro; criança; sim">${escape(members.map(m=>`${m.name}; ${m.person_type==='child'?'criança':'adulto'}; ${m.attendance_status==='no'?'não':m.attendance_status==='pending'?'pendente':'sim'}`).join('\n'))}</textarea><small class="field-hint">Uma por linha: nome; adulto/criança; sim/não/pendente.</small></label>`+`<label><span class="field-label">Restrições alimentares</span><textarea name="dietary">${escape(g?.dietary||'')}</textarea></label>`+`<label><span class="field-label">Observações</span><textarea name="notes">${escape(g?.notes||'')}</textarea></label>`+`<label><span class="field-label">Mensagem</span><textarea name="message">${escape(g?.message||'')}</textarea></label>`;
+ const members=g?.members||[],free=e.rsvp_mode==='free',peopleLimit=g?.max_people??e.max_people??'';
+ const limitField=free
+  ?field('max_people','Limite total · opcional','number',peopleLimit,false)+`<small class="field-hint family-limit-hint">Deixe vazio para não limitar a quantidade total desta confirmação.</small>`
+  :field('max_people','Limite total','number',peopleLimit||10);
+ const fields=field('name','Nome do responsável','text',g?.name||'')+field('group_label','Nome da família/grupo · opcional','text',g?.group_label||'',false)+field('phone','WhatsApp · opcional','tel',g?.phone||'',false)+limitField+field('max_adults_allowed','Máximo de adultos · opcional','number',g?.max_adults_allowed??'',false)+field('max_children_allowed','Máximo de crianças · opcional','number',g?.max_children_allowed??'',false)+select('response_status','Status geral',[['yes','Confirmado'],['no','Não vai'],['pending','Pendente']],g?.response_status||'pending')+`<label><span class="field-label">Pessoas da família</span><textarea name="members" placeholder="Maria; adulto; sim&#10;Pedro; criança; sim">${escape(members.map(m=>`${m.name}; ${m.person_type==='child'?'criança':'adulto'}; ${m.attendance_status==='no'?'não':m.attendance_status==='pending'?'pendente':'sim'}`).join('\n'))}</textarea><small class="field-hint">Uma por linha: nome; adulto/criança; sim/não/pendente.</small></label>`+`<label><span class="field-label">Restrições alimentares</span><textarea name="dietary">${escape(g?.dietary||'')}</textarea></label>`+`<label><span class="field-label">Observações</span><textarea name="notes">${escape(g?.notes||'')}</textarea></label>`+`<label><span class="field-label">Mensagem</span><textarea name="message">${escape(g?.message||'')}</textarea></label>`;
  const modal=openModal(g?'Editar família':'Adicionar família',form('family-editor',fields,g?'Salvar alterações':'Adicionar família'));
- submit('family-editor',async b=>{b.max_adults_allowed=b.max_adults_allowed===''?null:Number(b.max_adults_allowed);b.max_children_allowed=b.max_children_allowed===''?null:Number(b.max_children_allowed);const parsed=parseMemberLines(b.members);b.members=parsed.map(m=>{const prior=members.find(x=>normalizedName(x.name)===normalizedName(m.name));return {...m,...(prior?{id:prior.id,is_preapproved:prior.is_preapproved}:{})};});if(!b.members.length)b.members=[{name:b.name,person_type:'adult',attendance_status:b.response_status}];if(g)await api(endpoint,'PATCH',b);else await api(endpoint,'POST',b);modal.closeModal();await done();});
+ submit('family-editor',async b=>{b.max_people=b.max_people===''?null:Number(b.max_people);b.max_adults_allowed=b.max_adults_allowed===''?null:Number(b.max_adults_allowed);b.max_children_allowed=b.max_children_allowed===''?null:Number(b.max_children_allowed);const parsed=parseMemberLines(b.members);b.members=parsed.map(m=>{const prior=members.find(x=>normalizedName(x.name)===normalizedName(m.name));return {...m,...(prior?{id:prior.id,is_preapproved:prior.is_preapproved}:{})};});if(!b.members.length)b.members=[{name:b.name,person_type:'adult',attendance_status:b.response_status}];if(g)await api(endpoint,'PATCH',b);else await api(endpoint,'POST',b);modal.closeModal();await done();});
 }
 function eventSettingsFields(e={}){
- const mode=e.rsvp_mode||'free',basics=field('title','Nome do evento','text',e.title||'')+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location||'',false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
- const listRules=`<div class="list-only-settings" ${mode==='list'?'':'hidden'}>${select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],e.list_behavior||'strict')}${field('max_people','Limite padrão por família','number',mode==='free'?100:(e.max_people||10))}</div>`;
- const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],mode)+listRules+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
+ const mode=e.rsvp_mode||'free',limitValue=e.max_people??'',basics=field('title','Nome do evento','text',e.title||'')+field('event_date','Data e hora · opcional','datetime-local',toLocalInput(e.event_date),false)+field('location','Local · opcional','text',e.location||'',false)+field('deadline','Prazo para confirmar · opcional','datetime-local',toLocalInput(e.deadline),false);
+ const listRules=`<div class="list-only-settings" ${mode==='list'?'':'hidden'}>${select('list_behavior','Comportamento da lista',[['strict','Fechada: só pessoas cadastradas'],['flexible','Flexível: permite acompanhantes dentro do limite']],e.list_behavior||'strict')}</div>`;
+ const peopleLimit=`<label class="people-limit-setting"><span class="field-label" id="people-limit-label">${mode==='list'?'Limite padrão por família':'Limite de pessoas · opcional'}${mode==='list'?'<b class="required-mark" aria-hidden="true">*</b>':''}</span><input name="max_people" type="number" min="1" max="100" value="${escape(limitValue)}" ${mode==='list'?'required aria-required="true"':''}><small class="field-hint" id="people-limit-hint">${mode==='list'?'Cada família respeita este teto, além dos limites específicos de adultos e crianças.':'Deixe vazio para RSVP livre sem limite total.'}</small></label>`;
+ const options=select('rsvp_mode','Como os convidados confirmam',[['free','Link livre'],['list','Lista com link privado por família']],mode)+listRules+peopleLimit+select('checkin_mode','Check-in por QR',[['off','Desativado'],['family','Um QR por família'],['individual','Um QR por pessoa']],e.checkin_mode||'off');
  if(e.id)return basics+options+select('status','Situação',[['active','Ativo'],['inactive','Pausado'],['archived','Arquivado']],e.status);
  return basics+`<label><span class="field-label">Endereço do evento<b class="required-mark">*</b></span><input name="slug" required autocapitalize="none" spellcheck="false"><small class="field-hint">Link público: <span id="studio-host-preview">sua-marca.presencaconfirmada.com.br</span>/<strong id="event-url-preview">seu-evento</strong></small></label><details class="advanced-options"><summary>Opções do RSVP e check-in</summary><div class="advanced-body">${options}</div></details>`;
 }
 function bindRsvpModeSettings(formEl){
  if(!formEl)return;
- const mode=formEl.querySelector('[name="rsvp_mode"]'),listBox=formEl.querySelector('.list-only-settings'),limit=formEl.querySelector('[name="max_people"]');
- const sync=()=>{const isList=mode?.value==='list';if(listBox)listBox.hidden=!isList;if(limit){if(!isList)limit.value='100';else if(Number(limit.value)>=100)limit.value='10';}};
+ const mode=formEl.querySelector('[name="rsvp_mode"]'),listBox=formEl.querySelector('.list-only-settings'),limit=formEl.querySelector('[name="max_people"]'),label=formEl.querySelector('#people-limit-label'),hint=formEl.querySelector('#people-limit-hint');
+ const sync=()=>{
+  const isList=mode?.value==='list';if(listBox)listBox.hidden=!isList;
+  if(!limit)return;
+  limit.required=isList;limit.setAttribute('aria-required',isList?'true':'false');
+  if(isList&&!limit.value)limit.value='10';
+  if(label)label.innerHTML=isList?'Limite padrão por família<b class="required-mark" aria-hidden="true">*</b>':'Limite de pessoas · opcional';
+  if(hint)hint.textContent=isList?'Cada família respeita este teto, além dos limites específicos de adultos e crianças.':'Deixe vazio para RSVP livre sem limite total.';
+ };
  mode?.addEventListener('change',sync);sync();
 }
 async function dashboard(){
@@ -611,9 +624,9 @@ function publicSuccess(e,guest){
  applyAppearance(e.appearance,e.brand);click('calendar',()=>openCalendarMenu(e));
 }
 function freeRsvp(e,endpoint,guest=null){
- const t=eventTexts(e),requestId=crypto.randomUUID(),limit=Number(e.max_people||1),existing=(guest?.members||[]).filter(m=>m.attendance_status!=='no'),initialStatus=guest?.response_status&&guest.response_status!=='pending'?guest.response_status:'';
+ const t=eventTexts(e),requestId=crypto.randomUUID(),limit=e.max_people===null||e.max_people===undefined?null:Number(e.max_people),existing=(guest?.members||[]).filter(m=>m.attendance_status!=='no'),initialStatus=guest?.response_status&&guest.response_status!=='pending'?guest.response_status:'';
  const primaryName=guest?.name||'',companions=existing.filter((m,i)=>!(i===0&&normalizedName(m.name)===normalizedName(primaryName)));
- const companionGate=limit<=1
+ const companionGate=limit===1
   ?`<div class="rsvp-individual-note"><strong>${ptr(e,'Confirmação individual','Individual RSVP')}</strong><span>${ptr(e,'Este convite permite confirmar apenas uma pessoa.','This invitation allows only one attendee.')}</span></div>`
   :`<div class="rsvp-companion-gate" id="companion-gate" hidden>
     <span class="field-label">${ptr(e,'Você vai levar acompanhante?','Will you bring anyone with you?')}</span>
@@ -623,7 +636,7 @@ function freeRsvp(e,endpoint,guest=null){
     </div>
     <input type="hidden" name="has_companion" value="">
     <div id="companion-section" class="companion-section" hidden>
-      <div class="companion-section-head"><div><strong>${ptr(e,'Quem vai com você?','Who is coming with you?')}</strong><span>${ptr(e,'Adicione uma pessoa por campo.','Add one person per field.')}</span></div></div>
+      <div class="companion-section-head"><div><strong>${ptr(e,'Quem vai com você?','Who is coming with you?')}</strong><span>${ptr(e,'Adicione uma pessoa por campo.','Add one person per field.')}</span></div><b id="companion-count"></b></div>
       <div id="free-members" class="free-members"></div>
       <div class="companion-actions">
         <button type="button" class="secondary small" id="add-adult">${ptr(e,'+ Adulto','+ Adult')}</button>
@@ -638,11 +651,11 @@ function freeRsvp(e,endpoint,guest=null){
  app.innerHTML=publicFrame(e,`<p class="rsvp-welcome">${escape(e.welcome_message||t.intro)}</p>${form('public-rsvp',fields,ptr(e,'Enviar confirmação','Submit RSVP'))}`);applyAppearance(e.appearance,e.brand);
  const formEl=document.querySelector('#public-rsvp');mountTurnstile(formEl,e.turnstile_sitekey);
  const status=formEl.querySelector('[name=response_status]'),attending=formEl.querySelector('#attending-section'),decline=formEl.querySelector('#decline-hint'),companionStatus=formEl.querySelector('[name=has_companion]'),companionGateEl=formEl.querySelector('#companion-gate'),companionSection=formEl.querySelector('#companion-section'),membersRoot=formEl.querySelector('#free-members'),countEl=formEl.querySelector('#companion-count');
- const syncCount=()=>{if(!membersRoot||!countEl)return;countEl.textContent=`${membersRoot.querySelectorAll('[data-companion-row]').length}/${Math.max(0,limit-1)}`;};
+ const syncCount=()=>{if(!membersRoot||!countEl)return;const n=membersRoot.querySelectorAll('[data-companion-row]').length;countEl.textContent=limit===null?`${n} ${ptr(e,n===1?'acompanhante':'acompanhantes',n===1?'guest':'guests')}`:`${n}/${Math.max(0,limit-1)}`;};
  const addCompanion=(type,value='')=>{
   if(!membersRoot)return;
   const current=membersRoot.querySelectorAll('[data-companion-row]').length;
-  if(current>=Math.max(0,limit-1)){notice(ptr(e,`O convite permite no máximo ${limit} pessoa(s), contando você.`,`This invitation allows up to ${limit} people including you.`));return;}
+  if(limit!==null&&current>=Math.max(0,limit-1)){notice(ptr(e,`O convite permite no máximo ${limit} pessoa(s), contando você.`,`This invitation allows up to ${limit} people including you.`));return;}
   const row=document.createElement('label');row.className='companion-row';row.dataset.companionRow='1';
   row.innerHTML=`<span class="field-label">${type==='child'?ptr(e,'Nome da criança','Child name'):ptr(e,'Nome do adulto','Adult name')}</span><div class="companion-input-row"><input class="companion-name" data-type="${type}" value="${escape(value)}" placeholder="${type==='child'?ptr(e,'Nome da criança','Child name'):ptr(e,'Nome do acompanhante','Companion name')}"><button type="button" class="companion-remove" aria-label="${ptr(e,'Remover acompanhante','Remove guest')}">×</button></div>`;
   row.querySelector('.companion-remove').onclick=()=>{row.remove();syncCount();};
@@ -668,13 +681,13 @@ function freeRsvp(e,endpoint,guest=null){
  else if(initialStatus==='yes'&&companionStatus&&!companions.length)setCompanion('no');
  submit('public-rsvp',async b=>{
   if(!b.response_status)throw Error(ptr(e,'Escolha se você poderá comparecer.','Please choose whether you will attend.'));
-  if(b.response_status==='yes'&&limit>1&&!b.has_companion)throw Error(ptr(e,'Informe se você vai levar acompanhante.','Please tell us whether you are bringing anyone.'));
+  if(b.response_status==='yes'&&limit!==1&&!b.has_companion)throw Error(ptr(e,'Informe se você vai levar acompanhante.','Please tell us whether you are bringing anyone.'));
   const companionInputs=[...formEl.querySelectorAll('.companion-name')],blank=companionInputs.find(i=>!i.value.trim());
   if(b.response_status==='yes'&&b.has_companion==='yes'&&blank){blank.focus();throw Error(ptr(e,'Preencha ou remova o acompanhante que ficou sem nome.','Fill in or remove the guest with no name.'));}
   const companionMembers=b.response_status==='yes'&&b.has_companion==='yes'?companionInputs.map(i=>({name:i.value.trim(),person_type:i.dataset.type,attendance_status:'yes'})).filter(x=>x.name):[];
   if(b.response_status==='yes'&&b.has_companion==='yes'&&!companionMembers.length)throw Error(ptr(e,'Adicione pelo menos um acompanhante.','Add at least one companion.'));
   b.members=b.response_status==='yes'?[{name:b.name,person_type:'adult',attendance_status:'yes'},...companionMembers]:[{name:b.name,person_type:'adult',attendance_status:'no'}];
-  if(b.members.length>limit)throw Error(ptr(e,`O limite deste convite é de ${limit} pessoa(s).`,`This invitation allows up to ${limit} people.`));
+  if(limit!==null&&b.members.length>limit)throw Error(ptr(e,`O limite deste convite é de ${limit} pessoa(s).`,`This invitation allows up to ${limit} people.`));
   delete b.has_companion;b.creation_request_id=requestId;if(guest?.token)b.token=guest.token;
   try{const result=await api(endpoint,'POST',b);publicSuccess(e,result.guest);}catch(err){resetTurnstile(formEl);throw Error(publicError(err.message,e));}
  });
