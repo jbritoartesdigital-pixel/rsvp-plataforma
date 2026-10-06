@@ -12,6 +12,13 @@ const parseObject=(value,fallback={})=>{
  catch{return fallback;}
 };
 const boolObject=(value,defaults)=>Object.fromEntries(Object.keys(defaults).map(k=>[k,value?.[k]===undefined?defaults[k]:!!value[k]]));
+const tenantPublicOrigin=(env,studioSlug)=>{
+ try{
+  const host=new URL(env.APP_ORIGIN).hostname;
+  if(host==='localhost'||host==='127.0.0.1')return env.APP_ORIGIN;
+ }catch{}
+ return `https://${slug(studioSlug)}.presencaconfirmada.com.br`;
+};
 function cleanAppearance(value,current={}) {
  const raw=parseObject(value),out={...parseObject(current)};
  const colorKeys=['color','button_color','button_text_color','background_color','card_color','text_color','muted_color','overlay_color'];
@@ -407,7 +414,7 @@ export async function eventsRoutes(request,env,path,url) {
    const b=await body(request),raw=token(),permissions=boolObject(b,DEFAULT_CLIENT_PERMISSIONS);
    await run(env,'UPDATE events SET client_token=?,client_permissions=? WHERE id=? AND studio_id=?',raw,JSON.stringify(permissions),e.id,u.studio_id);
    await audit(env,u.studio_id,u.id,'client_link_reset',{event_id:e.id});
-   return json({url:`${env.APP_ORIGIN}/cliente/${raw}`,permissions});
+   return json({url:`${tenantPublicOrigin(env,u.studio.slug)}/cliente/${raw}`,permissions});
   }
 
   if(sub==='guests'){
