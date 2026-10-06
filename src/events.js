@@ -40,6 +40,19 @@ const nullableLimit=(value)=>{
  if(value===undefined||value===null||value==='')return null;
  return integer(value,0,100);
 };
+const nullablePeopleLimit=(value)=>{
+ if(value===undefined||value===null||value==='')return null;
+ return integer(value,1,100);
+};
+const eventPeopleLimit=e=>{
+ if(e&&Object.prototype.hasOwnProperty.call(e,'max_people_limit'))return e.max_people_limit===null||e.max_people_limit===undefined?null:Number(e.max_people_limit);
+ return e?.rsvp_mode==='free'?null:Number(e?.max_people||10);
+};
+const guestPeopleLimit=(g,e=null)=>{
+ if(g&&Object.prototype.hasOwnProperty.call(g,'max_people_limit'))return g.max_people_limit===null||g.max_people_limit===undefined?null:Number(g.max_people_limit);
+ return e?.rsvp_mode==='free'?null:Number(g?.max_people||eventPeopleLimit(e)||10);
+};
+const normalizedEvent=e=>({...e,max_people:eventPeopleLimit(e)});
 const memberKey=value=>String(value||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 
 async function eventEntitlement(env,studioId){
@@ -61,13 +74,13 @@ export async function tenantEvent(env,user,eventId) {
  if(!user.studio_id) fail(400,'Selecione uma conviteira.');
  const e=await one(env,'SELECT * FROM events WHERE id=? AND studio_id=?',eventId,user.studio_id);
  if(!e) fail(404,'Evento não encontrado.');
- return e;
+ return normalizedEvent(e);
 }
 
 function publicEvent(e,env={}) {
  return {
   id:e.id,title:e.title,event_date:e.event_date,location:e.location,deadline:e.deadline,status:e.status,
-  rsvp_mode:e.rsvp_mode,list_behavior:e.list_behavior||'strict',max_people:e.rsvp_mode==='free'?100:e.max_people,checkin_mode:e.checkin_mode,
+  rsvp_mode:e.rsvp_mode,list_behavior:e.list_behavior||'strict',max_people:eventPeopleLimit(e),checkin_mode:e.checkin_mode,
   appearance:parseObject(e.appearance),extra_fields:{...DEFAULT_EXTRA_FIELDS,...parseObject(e.extra_fields)},
   public_texts:parseObject(e.public_texts),welcome_message:e.welcome_message,
   studio_name:e.studio_name,brand:parseObject(e.brand),turnstile_sitekey:env.TURNSTILE_SITEKEY||''
@@ -96,7 +109,7 @@ async function verifyTurnstile(env,request,response) {
 async function guestData(env,g,privateView=false) {
  const members=await all(env,'SELECT id,name,person_type,attendance_status,qr_token,is_preapproved FROM guest_members WHERE guest_id=? ORDER BY rowid',g.id);
  const data={
-  id:g.id,name:g.name,group_label:g.group_label||'',response_status:g.response_status,max_people:g.max_people,
+  id:g.id,name:g.name,group_label:g.group_label||'',response_status:g.response_status,max_people:guestPeopleLimit(g),
   max_adults_allowed:g.max_adults_allowed,max_children_allowed:g.max_children_allowed,
   message:g.message,dietary:g.dietary,notes:g.notes||'',token:g.token,qr_token:g.qr_token,
   source:g.source||'admin',created_at:g.created_at||null,responded_at:g.responded_at||null,deleted_at:g.deleted_at||null,members
@@ -106,8 +119,8 @@ async function guestData(env,g,privateView=false) {
 }
 
 function compositionLimits(e,g,members) {
- const confirmed=members.filter(m=>m.attendance_status==='yes'),eventLimit=e.rsvp_mode==='free'?100:e.max_people,guestLimit=e.rsvp_mode==='free'?100:g.max_people;
- if(confirmed.length>Math.min(eventLimit,guestLimit)) fail(400,'A quantidade de pessoas confirmadas ultrapassa o limite deste convite.');
+ const confirmed=members.filter(m=>m.attendance_status==='yes'),limits=[eventPeopleLimit(e),guestPeopleLimit(g,e)].filter(v=>v!==null);
+ if(limits.length&&confirmed.length>Math.min(...limits)) fail(400,'A quantidade de pessoas confirmadas ultrapassa o limite deste convite.');
  const adults=confirmed.filter(m=>m.person_type==='adult').length;
  const children=confirmed.filter(m=>m.person_type==='child').length;
  if(g.max_adults_allowed!==null&&g.max_adults_allowed!==undefined&&adults>Number(g.max_adults_allowed)) fail(400,`Este convite permite no máximo ${g.max_adults_allowed} adulto(s).`);
@@ -147,7 +160,12 @@ async function saveRsvp(env,e,g,b,{actor=null,source='public',allowStructure=fal
  const stamp=now();
  const name=text(b.name??g.name);
  const groupLabel=allowStructure&&b.group_label!==undefined?text(b.group_label,160,false):g.group_label||'';
- const maxPeople=allowStructure&&b.max_people!==undefined?integer(b.max_people,1,e.max_people):g.max_people;
+ const eventLimit=eventPeopleLimit(e),currentPeopleLimit=guestPeopleLimit(g,e);
+ let maxPeople=currentPeopleLimit;
+ if(allowStructure&&b.max_people!==undefined){
+  if(e.rsvp_mode==='free')maxPeople=nullablePeopleLimit(b.max_people);
+  else maxPeople=integer(b.max_people===null||b.max_people===''?(currentPeopleLimit??eventLimit??10):b.max_people,1,eventLimit??100);
+ }
  const maxAdults=allowStructure&&b.max_adults_allowed!==undefined?nullableLimit(b.max_adults_allowed):g.max_adults_allowed;
  const maxChildren=allowStructure&&b.max_children_allowed!==undefined?nullableLimit(b.max_children_allowed):g.max_children_allowed;
  compositionLimits(e,{...g,max_people:maxPeople,max_adults_allowed:maxAdults,max_children_allowed:maxChildren},clean);
@@ -162,8 +180,8 @@ async function saveRsvp(env,e,g,b,{actor=null,source='public',allowStructure=fal
  const dietary=text(b.dietary??g.dietary,500,false);
  const notes=text(b.notes??g.notes,1000,false);
 
- const queries=[stmt(env,`UPDATE guests SET name=?,group_label=?,phone=?,response_status=?,max_people=?,max_adults_allowed=?,max_children_allowed=?,message=?,dietary=?,notes=?,responded_at=?,updated_at=?,qr_token=CASE WHEN ?='yes' AND (SELECT checkin_mode FROM events WHERE id=guests.event_id)='family' THEN CASE WHEN response_status='yes' AND qr_token IS NOT NULL THEN qr_token ELSE ? END ELSE NULL END WHERE id=? AND event_id=?`,
-  name,groupLabel,phone,status,maxPeople,maxAdults,maxChildren,message,dietary,notes,respondedAt,stamp,status,token(),g.id,e.id)];
+ const queries=[stmt(env,`UPDATE guests SET name=?,group_label=?,phone=?,response_status=?,max_people=?,max_people_limit=?,max_adults_allowed=?,max_children_allowed=?,message=?,dietary=?,notes=?,responded_at=?,updated_at=?,qr_token=CASE WHEN ?='yes' AND (SELECT checkin_mode FROM events WHERE id=guests.event_id)='family' THEN CASE WHEN response_status='yes' AND qr_token IS NOT NULL THEN qr_token ELSE ? END ELSE NULL END WHERE id=? AND event_id=?`,
+  name,groupLabel,phone,status,maxPeople??100,maxPeople,maxAdults,maxChildren,message,dietary,notes,respondedAt,stamp,status,token(),g.id,e.id)];
 
  const retained=new Set(clean.map(m=>m.id));
  for(const m of old)if(!retained.has(m.id))queries.push(stmt(env,"UPDATE guest_members SET attendance_status='no',qr_token=NULL WHERE id=? AND guest_id=?",m.id,g.id));
@@ -183,14 +201,15 @@ async function saveRsvp(env,e,g,b,{actor=null,source='public',allowStructure=fal
 }
 
 async function createGuest(env,e,input,{source='admin'}={}) {
- const guestId=id(),stamp=now(),name=text(input.name),maxPeople=integer(input.max_people||e.max_people,1,e.max_people);
+ const guestId=id(),stamp=now(),name=text(input.name),eventLimit=eventPeopleLimit(e);
+ const maxPeople=e.rsvp_mode==='free'?nullablePeopleLimit(input.max_people):integer(input.max_people===undefined||input.max_people===null||input.max_people===''?(eventLimit??10):input.max_people,1,eventLimit??100);
  const maxAdults=nullableLimit(input.max_adults_allowed),maxChildren=nullableLimit(input.max_children_allowed);
  const guestToken=token();
  const members=Array.isArray(input.members)&&input.members.length?input.members:[{name,person_type:'adult'}];
- if(members.length>maxPeople)fail(400,'A família ultrapassa o limite de pessoas.');
- const queries=[stmt(env,`INSERT INTO guests(id,event_id,name,phone,response_status,max_people,message,dietary,token,qr_token,created_at,updated_at,group_label,max_adults_allowed,max_children_allowed,creation_request_id,source,responded_at,deleted_at,notes)
- VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-  guestId,e.id,name,text(input.phone,40,false),'pending',maxPeople,'','',guestToken,null,stamp,stamp,text(input.group_label,160,false),maxAdults,maxChildren,null,source,null,null,'')];
+ if(maxPeople!==null&&members.length>maxPeople)fail(400,'A família ultrapassa o limite de pessoas.');
+ const queries=[stmt(env,`INSERT INTO guests(id,event_id,name,phone,response_status,max_people,message,dietary,token,qr_token,created_at,updated_at,group_label,max_adults_allowed,max_children_allowed,creation_request_id,source,responded_at,deleted_at,notes,max_people_limit)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  guestId,e.id,name,text(input.phone,40,false),'pending',maxPeople??100,'','',guestToken,null,stamp,stamp,text(input.group_label,160,false),maxAdults,maxChildren,null,source,null,null,'',maxPeople)];
  for(const member of members){
   queries.push(stmt(env,'INSERT INTO guest_members(id,guest_id,event_id,name,person_type,attendance_status,qr_token,is_preapproved) VALUES(?,?,?,?,?,?,NULL,1)',id(),guestId,e.id,text(member.name),choice(member.person_type||'adult',['adult','child']),'pending'));
  }
@@ -216,11 +235,12 @@ async function insertEvent(env,u,b,{copyOf=null}={}) {
  const extra=safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)});
  const publicTexts=safeObject(parseObject(b.public_texts));
  const permissions=safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS));
- await run(env,`INSERT INTO events(id,studio_id,title,slug,event_date,location,deadline,status,rsvp_mode,max_people,checkin_mode,appearance,welcome_message,client_token,client_permissions,created_at,list_behavior,extra_fields,public_texts,archived_at)
- VALUES(?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,NULL)`,
+ const rsvpMode=choice(b.rsvp_mode||'free',['free','list']),peopleLimit=rsvpMode==='list'?(nullablePeopleLimit(b.max_people)??10):nullablePeopleLimit(b.max_people);
+ await run(env,`INSERT INTO events(id,studio_id,title,slug,event_date,location,deadline,status,rsvp_mode,max_people,checkin_mode,appearance,welcome_message,client_token,client_permissions,created_at,list_behavior,extra_fields,public_texts,max_people_limit,archived_at)
+ VALUES(?,?,?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,?,NULL)`,
   eventId,u.studio_id,text(b.title),eventSlug,date(b.event_date),text(b.location,300,false),date(b.deadline),
-  choice(b.rsvp_mode||'free',['free','list']),choice(b.rsvp_mode||'free',['free','list'])==='free'?100:integer(b.max_people||10,1,100),choice(b.checkin_mode||'off',['off','family','individual']),
-  appearance,text(b.welcome_message,2000,false),token(),permissions,created,choice(b.list_behavior||'strict',['strict','flexible']),extra,publicTexts);
+  rsvpMode,peopleLimit??100,choice(b.checkin_mode||'off',['off','family','individual']),
+  appearance,text(b.welcome_message,2000,false),token(),permissions,created,choice(b.list_behavior||'strict',['strict','flexible']),extra,publicTexts,peopleLimit);
  await audit(env,u.studio_id,u.id,copyOf?'duplicate_event':'create_event',{event_id:eventId,source_event_id:copyOf||null});
  return tenantEvent(env,u,eventId);
 }
@@ -258,12 +278,12 @@ export async function eventsRoutes(request,env,path,url) {
    if(!g){
     if(e.rsvp_mode==='list')fail(403,'Abra o link individual enviado pelo anfitrião.');
     const created=now(),guestId=id(),guestName=text(b.name);
-    const members=Array.isArray(b.members)&&b.members.length?b.members:[{name:guestName,person_type:'adult',attendance_status:b.response_status||'pending'}];
-    if(members.length>(e.rsvp_mode==='free'?100:e.max_people))fail(400,'Informe as pessoas dentro do limite do convite.');
+    const members=Array.isArray(b.members)&&b.members.length?b.members:[{name:guestName,person_type:'adult',attendance_status:b.response_status||'pending'}],peopleLimit=eventPeopleLimit(e);
+    if(peopleLimit!==null&&members.length>peopleLimit)fail(400,'Informe as pessoas dentro do limite do convite.');
     try{
-     await run(env,`INSERT INTO guests(id,event_id,name,phone,response_status,max_people,message,dietary,token,qr_token,created_at,updated_at,group_label,max_adults_allowed,max_children_allowed,creation_request_id,source,responded_at,deleted_at,notes)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      guestId,e.id,guestName,'','pending',e.rsvp_mode==='free'?100:e.max_people,'','',token(),null,created,created,'',null,null,requestId,'public',null,null,'');
+     await run(env,`INSERT INTO guests(id,event_id,name,phone,response_status,max_people,message,dietary,token,qr_token,created_at,updated_at,group_label,max_adults_allowed,max_children_allowed,creation_request_id,source,responded_at,deleted_at,notes,max_people_limit)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      guestId,e.id,guestName,'','pending',peopleLimit??100,'','',token(),null,created,created,'',null,null,requestId,'public',null,null,'',peopleLimit);
      g=await one(env,'SELECT * FROM guests WHERE id=?',guestId);
     }catch(error){
      if(requestId)g=await one(env,'SELECT * FROM guests WHERE event_id=? AND creation_request_id=?',e.id,requestId);
@@ -379,14 +399,15 @@ export async function eventsRoutes(request,env,path,url) {
   if(!sub&&method==='GET')return json({event:e});
   if(!sub&&method==='PATCH'){
    const b=await body(request);
-   const nextStatus=choice(b.status??e.status,['active','inactive','archived']);
+   const nextStatus=choice(b.status??e.status,['active','inactive','archived']),nextMode=choice(b.rsvp_mode??e.rsvp_mode,['free','list']);
+   const currentLimit=eventPeopleLimit(e),nextLimit=nextMode==='list'?(b.max_people===undefined?(currentLimit??10):(nullablePeopleLimit(b.max_people)??10)):(b.max_people===undefined?currentLimit:nullablePeopleLimit(b.max_people));
    await run(env,`UPDATE events SET
-    title=?,event_date=?,location=?,deadline=?,status=?,rsvp_mode=?,list_behavior=?,max_people=?,checkin_mode=?,
+    title=?,event_date=?,location=?,deadline=?,status=?,rsvp_mode=?,list_behavior=?,max_people=?,max_people_limit=?,checkin_mode=?,
     appearance=?,extra_fields=?,public_texts=?,client_permissions=?,welcome_message=?,archived_at=?
     WHERE id=? AND studio_id=?`,
     text(b.title??e.title),date(b.event_date??e.event_date),text(b.location??e.location,300,false),date(b.deadline===undefined?e.deadline:b.deadline),
-    nextStatus,choice(b.rsvp_mode??e.rsvp_mode,['free','list']),choice(b.list_behavior??e.list_behavior,['strict','flexible']),
-    choice(b.rsvp_mode??e.rsvp_mode,['free','list'])==='free'?100:integer(b.max_people??e.max_people,1,100),choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
+    nextStatus,nextMode,choice(b.list_behavior??e.list_behavior,['strict','flexible']),
+    nextLimit??100,nextLimit,choice(b.checkin_mode??e.checkin_mode,['off','family','individual']),
     b.appearance?safeObject(cleanAppearance(b.appearance,e.appearance)):e.appearance,b.extra_fields?safeObject({...DEFAULT_EXTRA_FIELDS,...parseObject(b.extra_fields)}):e.extra_fields,
     b.public_texts?safeObject(b.public_texts):e.public_texts,b.client_permissions?safeObject(boolObject(parseObject(b.client_permissions),DEFAULT_CLIENT_PERMISSIONS)):e.client_permissions,text(b.welcome_message??e.welcome_message,2000,false),
     nextStatus==='archived'?(e.archived_at||now()):null,e.id,u.studio_id);
