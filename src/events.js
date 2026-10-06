@@ -14,18 +14,25 @@ const parseObject=(value,fallback={})=>{
 const boolObject=(value,defaults)=>Object.fromEntries(Object.keys(defaults).map(k=>[k,value?.[k]===undefined?defaults[k]:!!value[k]]));
 const tenantPublicOrigin=(env,studioSlug)=>{
  try{
-  const host=new URL(env.APP_ORIGIN).hostname;
+  const host=new URL(env.APP_ORIGIN).hostname.toLowerCase();
   if(host==='localhost'||host==='127.0.0.1')return env.APP_ORIGIN;
+  const hml=host==='hml.presencaconfirmada.com.br'||host.endsWith('.hml.presencaconfirmada.com.br');
+  return `https://${slug(studioSlug)}${hml?'.hml':''}.presencaconfirmada.com.br`;
  }catch{}
  return `https://${slug(studioSlug)}.presencaconfirmada.com.br`;
 };
+const tenantSlugFromHostname=host=>{
+ host=String(host||'').toLowerCase();
+ const hmlSuffix='.hml.presencaconfirmada.com.br',prodSuffix='.presencaconfirmada.com.br';
+ let sub='';
+ if(host.endsWith(hmlSuffix))sub=host.slice(0,-hmlSuffix.length);
+ else if(host.endsWith(prodSuffix))sub=host.slice(0,-prodSuffix.length);
+ else return null;
+ return sub&&!['app','hml','www'].includes(sub)&&!sub.includes('.')?sub:null;
+};
 const tenantSlugFromRequest=request=>{
- try{
-  const host=new URL(request.url).hostname.toLowerCase(),suffix='.presencaconfirmada.com.br';
-  if(!host.endsWith(suffix))return null;
-  const sub=host.slice(0,-suffix.length);
-  return sub&&!['app','hml','www'].includes(sub)&&!sub.includes('.')?sub:null;
- }catch{return null;}
+ try{return tenantSlugFromHostname(new URL(request.url).hostname);}
+ catch{return null;}
 };
 function cleanAppearance(value,current={}) {
  const raw=parseObject(value),out={...parseObject(current)};
