@@ -1,12 +1,10 @@
 name: Acionar correção de navegação
 on:
-  push:
-    branches: [main]
-    paths: [docs/DEPLOY_NAV_FIX_NOW]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   ready:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Correção de navegação validada e autorizada."
+      - run: echo "Fluxo temporário desativado."
