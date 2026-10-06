@@ -1,2 +1,2 @@
-audit Mercado Pago production readiness
-source_head=8fba120a5b1499bd92858f2334c74a1ccb6d5016
+audit Worker secret names for production readiness
+source_head=afbfb5bc871767650fa4c68ab683c3579f4d378a
