@@ -19,6 +19,14 @@ const tenantPublicOrigin=(env,studioSlug)=>{
  }catch{}
  return `https://${slug(studioSlug)}.presencaconfirmada.com.br`;
 };
+const tenantSlugFromRequest=request=>{
+ try{
+  const host=new URL(request.url).hostname.toLowerCase(),suffix='.presencaconfirmada.com.br';
+  if(!host.endsWith(suffix))return null;
+  const sub=host.slice(0,-suffix.length);
+  return sub&&!['app','hml','www'].includes(sub)&&!sub.includes('.')?sub:null;
+ }catch{return null;}
+};
 function cleanAppearance(value,current={}) {
  const raw=parseObject(value),out={...parseObject(current)};
  const colorKeys=['color','button_color','button_text_color','background_color','card_color','text_color','muted_color','overlay_color'];
@@ -256,6 +264,8 @@ export async function eventsRoutes(request,env,path,url) {
  const method=request.method;
  let match=path.match(/^\/api\/public\/([^/]+)\/([^/]+)(?:\/(rsvp))?$/);
  if(match){
+  const hostStudio=tenantSlugFromRequest(request);
+  if(hostStudio&&hostStudio!==match[1])fail(404,'Evento indisponível.');
   const e=await one(env,'SELECT e.*,s.name studio_name,s.brand,s.status studio_status FROM events e JOIN studios s ON s.id=e.studio_id WHERE s.slug=? AND e.slug=?',match[1],match[2]);
   if(!e||e.status!=='active'||e.studio_status!=='active')fail(404,'Evento indisponível.');
   if(!match[3]&&method==='GET'){
@@ -302,8 +312,9 @@ export async function eventsRoutes(request,env,path,url) {
 
  match=path.match(/^\/api\/cliente\/([^/]+)(?:\/(guests|event|media)(?:\/([^/]+))?)?$/);
  if(match){
-  const e=await one(env,'SELECT e.*,s.name studio_name,s.brand,s.status studio_status FROM events e JOIN studios s ON s.id=e.studio_id WHERE client_token=?',match[1]);
-  if(!e||e.studio_status!=='active')fail(404,'Link indisponível.');
+  const e=await one(env,'SELECT e.*,s.name studio_name,s.slug studio_slug,s.brand,s.status studio_status FROM events e JOIN studios s ON s.id=e.studio_id WHERE client_token=?',match[1]);
+  const hostStudio=tenantSlugFromRequest(request);
+  if(!e||e.studio_status!=='active'||(hostStudio&&hostStudio!==e.studio_slug))fail(404,'Link indisponível.');
   const permissions={...DEFAULT_CLIENT_PERMISSIONS,...parseObject(e.client_permissions)};
   const sub=match[2],key=match[3];
 
