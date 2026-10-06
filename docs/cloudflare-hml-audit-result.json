@@ -1,0 +1,16 @@
+{
+  "checked_at": "2026-10-06T02:18:59Z",
+  "random_host": "slug-audit-20261006021858.hml.presencaconfirmada.com.br",
+  "hml": {
+    "a": "104.21.15.88,172.67.161.254",
+    "aaaa": "2606:4700:3035::ac43:a1fe,2606:4700:3034::6815:f58",
+    "http_code": "200",
+    "title": "Presença Confirmada · RSVP para profissionais de eventos"
+  },
+  "tenant_hml": {
+    "a": "",
+    "aaaa": "",
+    "http_code": "000",
+    "title": ""
+  }
+}
