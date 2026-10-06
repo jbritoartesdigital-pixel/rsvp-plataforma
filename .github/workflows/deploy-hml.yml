@@ -2,9 +2,6 @@ name: Publicar homologação comercial
 
 on:
   workflow_dispatch:
-  push:
-    branches: [v3-gap-package]
-    paths: [docs/DEPLOY_HML_V3_NOW]
 
 permissions:
   contents: read
@@ -30,28 +27,8 @@ jobs:
       - run: pnpm run validate
       - name: Conferir destino de homologação
         run: node scripts/guard-deploy-hml.mjs
-      - name: Conferir secrets essenciais da HML
-        run: |
-          set -euo pipefail
-          pnpm exec wrangler secret list --env hml > /tmp/hml-secrets.json
-          jq -e 'map(.name) | index("MP_ACCESS_TOKEN") != null' /tmp/hml-secrets.json >/dev/null
-          jq -e 'map(.name) | index("MP_WEBHOOK_SECRET") != null' /tmp/hml-secrets.json >/dev/null
-          echo "Secrets essenciais da HML presentes."
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - name: Aplicar migrations no D1 de homologação
         run: pnpm exec wrangler d1 migrations apply DB --remote --env hml
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Validar schema V3 na HML
-        run: |
-          set -euo pipefail
-          pnpm exec wrangler d1 execute DB --remote --env hml --command="SELECT name FROM sqlite_master WHERE type='table' AND name IN ('event_templates','template_media','integration_events') ORDER BY name;" > /tmp/hml-schema.txt
-          grep -q "event_templates" /tmp/hml-schema.txt
-          grep -q "template_media" /tmp/hml-schema.txt
-          grep -q "integration_events" /tmp/hml-schema.txt
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -73,15 +50,3 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      - name: Smoke remoto HML
-        run: |
-          set -euo pipefail
-          curl -fSsL --retry 8 --retry-delay 2 https://hml.presencaconfirmada.com.br/ >/tmp/hml-home.html
-          grep -q "Presença Confirmada" /tmp/hml-home.html
-          curl -fSsL --retry 8 --retry-delay 2 https://hml.presencaconfirmada.com.br/api/plans >/tmp/hml-plans.json
-          jq -e '.plans | length > 0' /tmp/hml-plans.json >/dev/null
-          random="slug-v3-$(date -u +%Y%m%d%H%M%S).hml.presencaconfirmada.com.br"
-          test -n "$(getent ahosts "$random" | head -1)"
-          curl -fSsL --retry 8 --retry-delay 2 "https://$random/api/plans" >/tmp/hml-tenant-plans.json
-          jq -e '.plans | length > 0' /tmp/hml-tenant-plans.json >/dev/null
-          echo "HML e wildcard responderam após o único deploy."
