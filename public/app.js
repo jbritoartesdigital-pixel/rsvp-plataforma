@@ -491,7 +491,7 @@ async function newEvent(){
   menuEvents();return;
  }
  app.innerHTML=menu()+`<section class="flow-intro compact"><span class="eyebrow">Novo evento</span><h1>Crie a base da celebração</h1><p>${entitlement.mode==='credits'?`Este evento usará 1 dos seus ${entitlement.credits} crédito(s).`:'Sua mensalidade está vigente e cobre este novo evento.'}</p></section><div class="card setup-card">${form('event',eventSettingsFields(),'Criar evento')}</div>`;
- menuEvents();bindAutoSlug('title','slug','event-url-preview');bindRsvpModeSettings(document.querySelector('#event'));const hostPreview=document.querySelector('#studio-host-preview');if(hostPreview)hostPreview.textContent=`${user.studio.slug}.presencaconfirmada.com.br`;submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
+ menuEvents();bindAutoSlug('title','slug','event-url-preview');bindRsvpModeSettings(document.querySelector('#event'));const hostPreview=document.querySelector('#studio-host-preview');if(hostPreview)hostPreview.textContent=new URL(tenantOrigin(user.studio.slug)).hostname;submit('event',async b=>{b.event_date=localToIso(b.event_date);b.deadline=localToIso(b.deadline);const {event}=await api('/api/events','POST',b);goto(`/app/eventos/${event.id}`);});
 }
 function guestRowHtml(e,g,link){
  const people=g.members.filter(m=>m.attendance_status==='yes'),adults=people.filter(m=>m.person_type==='adult').length,children=people.filter(m=>m.person_type==='child').length;
