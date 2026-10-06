@@ -373,3 +373,24 @@ test('conta interna aprovada recebe créditos só na HML',async()=>{
  const normalMe=await g.request('/api/auth/me','GET',null,normal.cookie);
  assert.equal(normalMe.body.user.studio.credits,0);
 });
+
+
+test('modo livre não depende de quantidade configurada pela conviteira',async()=>{
+ const f=fixture(),a=await f.register();
+ f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Livre',slug:'livre',rsvp_mode:'free',max_people:2},a.cookie)).body.event;
+ assert.equal(e.max_people,100);
+ const members=Array.from({length:12},(_,i)=>({name:i?'Acompanhante '+i:'Maria',person_type:i%3===0?'child':'adult',attendance_status:'yes'}));
+ const r=await f.request('/api/public/marca-a/livre/rsvp','POST',{name:'Maria',response_status:'yes',members});
+ assert.equal(r.status,200);
+ assert.equal(r.body.guest.members.filter(m=>m.attendance_status==='yes').length,12);
+});
+
+test('link privado da cliente usa subdomínio da conviteira',async()=>{
+ const f=fixture(),a=await f.register();
+ f.exec('UPDATE studios SET credits=1 WHERE id=?',a.user.studio_id);
+ const e=(await f.request('/api/events','POST',{title:'Evento',slug:'evento'},a.cookie)).body.event;
+ const link=await f.request('/api/events/'+e.id+'/client-link','POST',{view:true},a.cookie);
+ assert.equal(link.status,200);
+ assert.match(link.body.url,/^https:\/\/marca-a\.presencaconfirmada\.com\.br\/cliente\//);
+});
