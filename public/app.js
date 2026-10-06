@@ -102,6 +102,15 @@ const formatDate=(value,time=false)=>{
  if(!Number.isFinite(d.getTime()))return '';
  return new Intl.DateTimeFormat('pt-BR',time?{dateStyle:'short',timeStyle:'short'}:{dateStyle:'medium'}).format(d);
 };
+const formatPublicDate=(value,lang='pt-BR')=>{
+ if(!value)return '';
+ const d=new Date(value);
+ if(!Number.isFinite(d.getTime()))return '';
+ const locale=lang==='en'?'en-US':'pt-BR';
+ const date=new Intl.DateTimeFormat(locale,{day:'2-digit',month:'short',year:'numeric'}).format(d);
+ const clock=new Intl.DateTimeFormat(locale,{hour:'2-digit',minute:'2-digit',...(lang==='en'?{}:{hour12:false})}).format(d);
+ return `${date} • ${clock}`;
+};
 const statusTone=value=>['active','approved','yes','authorized'].includes(String(value))?'success':['pending','in_process','in_mediation','paused'].includes(String(value))?'warning':['inactive','archived','cancelled','failed','refunded','charged_back','rejected','no','suspended'].includes(String(value))?'danger':'neutral';
 const ledgerLabel=value=>({purchase:'Compra de créditos',refund:'Estorno de créditos',event:'Evento criado'}[String(value)]||String(value??'Movimentação'));
 function setShell(mode){
@@ -231,7 +240,9 @@ function applyStudioBrand(){
  root.style.setProperty('--studio-strong',`color-mix(in srgb, ${b.color}, #2b2725 34%)`);
  root.style.setProperty('--studio-soft',`color-mix(in srgb, ${b.color}, white 88%)`);
  const header=document.querySelector('body[data-shell="app"]>header .logo');
- if(header)header.innerHTML=`${b.logo?`<img class="tenant-header-logo" src="${escape(b.logo)}" alt="">`:''}<span class="tenant-header-copy"><strong>${escape(user.studio.name)}</strong><small>RSVP profissional</small></span>`;
+ if(header)header.innerHTML=`${b.logo?`<img class="tenant-header-logo" src="${escape(b.logo)}" alt="">`:''}<span class="tenant-header-copy"><strong>${escape(user.studio.name)}</strong><small>RSVP PROFISSIONAL</small></span>`;
+ const headerNav=document.querySelector('body[data-shell="app"]>header nav');
+ if(headerNav)headerNav.innerHTML='<button class="header-logout" id="logout">Sair</button>';
  document.body.classList.add('tenant-branded');
 }
 
@@ -240,6 +251,8 @@ const menu=()=>{
  const item=(href,label,active)=>`<a class="${active?'active':''}" href="${href}">${label}</a>`;
  const pureAdmin=user?.role==='super_admin'&&!user?.impersonated_studio_id;
  if(pureAdmin)return `<div class="app-nav-wrap admin-nav-wrap"><nav class="app-tabs admin-tabs" aria-label="Navegação administrativa">${item('/admin','Admin',p==='/admin')}${item('/admin/conta','Meu acesso',p==='/admin/conta')}</nav></div>`;
+ const eventWorkspace=/^\\/app\\/eventos\\/[^/]+$/.test(p)&&p!=='/app/eventos/novo';
+ if(eventWorkspace)return user?.impersonated_studio_id?`<div class="impersonation"><div><strong>Modo suporte</strong><span>Você está acessando a conta ${escape(user.studio?.name||'selecionada')} como Super Admin.</span></div><button id="stop-impersonation">Voltar ao Admin</button></div>`:'';
  return `<div class="app-nav-wrap"><nav class="app-tabs" aria-label="Navegação da plataforma">
   ${item('/app','Eventos',p==='/app'||p.startsWith('/app/eventos'))}
   ${item('/app/modelos','Modelos',p==='/app/modelos')}
@@ -605,7 +618,8 @@ async function dashboard(){
    <div class="event-progress"><div><span>Respostas</span><b>${pct}%</b></div><div class="progress-track"><i style="width:${pct}%"></i></div></div>
    <div class="event-card-actions">${archived?`<button class="button secondary" data-restore-event="${e.id}">Restaurar</button>`:`<a class="button secondary" href="/app/eventos/${e.id}">Abrir painel</a><a class="text-action" href="${publicLink}" target="_blank" rel="noopener">Ver RSVP</a>`}</div></article>`;
  }).join('');
- app.innerHTML=menu()+`<section class="tenant-dashboard-hero"><div class="tenant-dashboard-brand">${tenantMark(s.name,b)}<div><small>PAINEL DA MARCA</small><strong>${escape(s.name)}</strong></div></div><div class="tenant-dashboard-copy"><span class="soft-chip">${archived?'ARQUIVO':'EVENTOS'}</span><h1>${archived?'Eventos arquivados':'Seus eventos, sem caça ao tesouro.'}</h1><p>${archived?'Eventos guardados, sem receber novas confirmações.':'Confirmações, listas, mensagens e presença em um só lugar.'}</p></div><div class="tenant-dashboard-actions"><span class="plan-pill"><b>${escape(billing.title)}</b><small>${escape(billing.text)}</small></span><a class="button secondary" href="/app${archived?'':'?arquivados=1'}">${archived?'← Ativos':'Ver arquivados'}</a>${archived?'':entitlement.can_create?`<button class="button secondary" id="import-json">Importar JSON</button><a class="button" href="/app/eventos/novo">+ Criar evento</a>`:`<a class="button" href="/app/financeiro">Liberar criação</a>`}</div></section>
+ app.innerHTML=`<section class="tenant-dashboard-hero"><div class="tenant-dashboard-copy"><span class="soft-chip">${archived?'ARQUIVO':'PAINEL DA MARCA'}</span><h1>${archived?'Eventos arquivados':'Seus eventos, sem caça ao tesouro.'}</h1><p>${archived?'Eventos guardados, sem receber novas confirmações.':'Confirmações, listas, mensagens e aparência em um só lugar.'}</p></div><div class="tenant-dashboard-actions"><span class="plan-pill"><b>${escape(billing.title)}</b><small>${escape(billing.text)}</small></span><a class="button secondary" href="/app${archived?'':'?arquivados=1'}">${archived?'← Ativos':'Ver arquivados'}</a>${archived?'':entitlement.can_create?`<button class="button secondary" id="import-json">Importar JSON</button><a class="button" href="/app/eventos/novo">+ Criar evento</a>`:`<a class="button" href="/app/financeiro">Liberar criação</a>`}</div></section>
+ ${menu()}
  ${!archived&&!entitlement.can_create?`<div class="entitlement-alert"><strong>Criação bloqueada</strong><span>${escape(entitlement.reason)}</span><a href="/app/financeiro">Ver planos e pagamentos</a></div>`:''}
  <div class="section-title premium-section-title"><div><h2>${archived?'Eventos arquivados':'Eventos ativos'}</h2><span class="meta">${events.length} evento${events.length===1?'':'s'}</span></div></div>
  <section class="content-section">${cards?`<div class="event-grid premium-event-grid">${cards}</div>`:`<div class="empty-state"><div class="empty-mark">✓</div><h2>${archived?'Nenhum evento arquivado':'Seu primeiro evento começa aqui'}</h2><p>${archived?'Quando arquivar um evento, ele aparecerá aqui.':'Crie a celebração, personalize o RSVP e compartilhe o link.'}</p>${archived?'':entitlement.can_create?'<a class="button" href="/app/eventos/novo">Criar primeiro evento</a>':'<a class="button" href="/app/financeiro">Comprar crédito ou mensalidade</a>'}</div>`}</section>`;
@@ -730,9 +744,11 @@ async function eventPage(eventId){
  const publicUrl=link,clientUrl=`${tenantOrigin(user.studio.slug)}/cliente/${encodeURIComponent(e.client_token)}`;
  const tabLink=(key,label)=>`<a class="${tab===key?'active':''}" href="/app/eventos/${eventId}?tab=${key}">${label}</a>`;
  const mediaCards=media.map(m=>`<div class="media-card"><div class="media-thumb">${m.mime_type.startsWith('video/')?`<video src="${mediaUrl(m.id)}" muted playsinline></video>`:`<img src="${mediaUrl(m.id)}" alt="">`}</div><div><strong>${escape(({background_image:'Fundo',background_video:'Vídeo',cover:'Capa',logo:'Logo',other:'Mídia'}[m.media_kind]||'Mídia'))}</strong><small>${escape(m.original_name||m.mime_type)}</small></div><div class="media-actions"><button class="secondary small" data-use-media="${m.id}" data-kind="${m.media_kind}">Usar</button><button class="quiet-danger small" data-delete-media="${m.id}">Remover</button></div></div>`).join('');
- const workspaceAccent=safeBrandColor(a.button_color,studioBrand().color);
- const header=`<section class="event-hero" style="--workspace-accent:${workspaceAccent}"><div class="event-hero-copy"><span class="eyebrow">${escape(user.studio.name)}</span><div class="title-with-status"><h1>${escape(e.title)}</h1><span class="event-hero-status">${escape(labelStatus(e.status))}</span></div><p>${e.event_date?escape(formatDate(e.event_date,true)):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''} · ${e.rsvp_mode==='list'?'Lista fechada':'Confirmação livre'}</p></div><div class="head-actions"><a class="button event-hero-button" href="${link}" target="_blank" rel="noopener">Ver RSVP</a><button class="event-hero-button secondary" id="copy-public">Copiar link</button>${e.checkin_mode!=='off'?`<a class="button event-hero-button secondary" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}</div></section>
- <nav class="event-tabs premium-event-tabs" aria-label="Áreas do evento">${tabLink('overview','Visão geral')}${tabLink('guests','Convidados')}${tabLink('messages','Mensagens')}${tabLink('appearance','Personalização')}${tabLink('settings','Configurações')}</nav>`;
+ const workspaceAccent=safeBrandColor(a.button_color,studioBrand().color),workspaceSoft=safeBrandColor(a.background_color,'#f8efec');
+ const headerNav=document.querySelector('body[data-shell="app"]>header nav');
+ if(headerNav)headerNav.innerHTML=`<a class="header-event-action" href="/app">← Eventos</a><a class="header-event-action" href="${link}" target="_blank" rel="noopener">Ver RSVP</a>${e.checkin_mode!=='off'?`<a class="header-event-action header-checkin" href="/app/eventos/${eventId}/checkin">Check-in</a>`:''}`;
+ const header=`<section class="event-hero libri-parity-event-hero" style="--workspace-accent:${workspaceAccent};--workspace-soft:${workspaceSoft}"><div class="event-hero-copy"><span class="eyebrow">PAINEL DA MARCA</span><h1>${escape(e.title)}</h1><p>${e.event_date?escape(formatPublicDate(e.event_date,'pt-BR')):'Data ainda não informada'}${e.location?` · ${escape(e.location)}`:''} · ${e.rsvp_mode==='list'?'Lista fechada':'Confirmação livre'}</p></div></section>
+ <nav class="event-tabs premium-event-tabs" aria-label="Áreas do evento">${tabLink('overview','Visão geral')}${tabLink('guests','Convidados')}${tabLink('messages','Mensagens')}${tabLink('appearance','Aparência')}${tabLink('settings','Configurações')}</nav>`;
  let content='';
  if(tab==='overview'){
   content=`<section class="overview-stats premium-overview-stats"><article class="overview-stat primary"><span>Pessoas confirmadas</span><strong>${confirmedPeople}</strong></article><article class="overview-stat"><span>Adultos</span><strong>${confirmed.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes'&&m.person_type==='adult').length,0)}</strong></article><article class="overview-stat"><span>Crianças</span><strong>${confirmed.reduce((n,g)=>n+g.members.filter(m=>m.attendance_status==='yes'&&m.person_type==='child').length,0)}</strong></article><article class="overview-stat"><span>Aguardando</span><strong>${pending.length}</strong></article></section>
@@ -768,7 +784,6 @@ async function eventPage(eventId){
  }
  app.innerHTML=menu()+header+content;
  menuEvents();
- click('copy-public',async()=>{await navigator.clipboard.writeText(publicUrl);notice('Link do RSVP copiado.');});
  if(tab==='overview'){
   click('copy-public-overview',async()=>{await navigator.clipboard.writeText(publicUrl);notice('Link do RSVP copiado.');});
   click('copy-client',async()=>{await navigator.clipboard.writeText(clientUrl);notice('Link da cliente copiado.');});
@@ -818,8 +833,8 @@ function downloadCSV(guests){
  const link=document.createElement('a');link.href=URL.createObjectURL(new Blob(['\ufeff',data],{type:'text/csv;charset=utf-8'}));link.download='convidados.csv';link.click();setTimeout(()=>URL.revokeObjectURL(link.href),1000);
 }
 function publicFrame(e,content){
- const a=eventAppearance(e),t=eventTexts(e),logo=safeMedia(a.logo_url)?`<img class="event-logo" src="${escape(safeMedia(a.logo_url))}" alt="">`:'',cover=safeMedia(a.cover_url)?`<img class="event-cover" src="${escape(safeMedia(a.cover_url))}" alt="">`:'',meta=e.event_date?`<div class="event-meta">${escape(formatDate(e.event_date,true))}</div>`:'';
- return `<div class="rsvp-shell event-font-${escape(a.font_style)} event-width-${escape(a.card_width)}"><div class="rsvp-card">${cover}${logo}<div class="rsvp-brand">${escape(e.studio_name||'')}</div><span class="eyebrow">${escape(t.eyebrow)}</span><h1>${escape(e.title)}</h1>${meta}${content}</div></div>`;
+ const a=eventAppearance(e),t=eventTexts(e),logo=safeMedia(a.logo_url)?`<img class="event-logo public-event-logo" src="${escape(safeMedia(a.logo_url))}" alt="">`:'',cover=safeMedia(a.cover_url)?`<img class="event-cover" src="${escape(safeMedia(a.cover_url))}" alt="">`:'',meta=e.event_date?`<div class="event-meta">${escape(formatPublicDate(e.event_date,eventLang(e)))}</div>`:'',hasMedia=!!safeMedia(a.background_url);
+ return `<div class="rsvp-shell public-parity-shell ${hasMedia?'has-media ':''}event-font-${escape(a.font_style)} event-width-${escape(a.card_width)}"><div class="rsvp-card public-parity-card">${logo}${cover}<span class="eyebrow">${escape(t.eyebrow)}</span><h1>${escape(e.title)}</h1>${meta}${content}</div></div>`;
 }
 function publicOptionalFields(e,g={}){
  const f=eventExtra(e),t=eventTexts(e);
@@ -854,8 +869,8 @@ function freeRsvp(e,endpoint,guest=null){
       </div>
     </div>
    </div>`;
- const fields=field('name',t.name_label||ptr(e,'Qual é o seu nome?','What is your name?'),'text',primaryName)+
-  `<div class="rsvp-question"><span class="field-label">${ptr(e,'Você poderá comparecer?','Will you attend?')}</span><div class="rsvp-choice-grid" id="attendance-choice"><button type="button" data-attendance="yes">${escape(t.yes_button||ptr(e,'Sim, estarei presente','Yes, I will attend'))}</button><button type="button" data-attendance="no">${escape(t.no_button||ptr(e,'Não poderei ir','I cannot attend'))}</button></div><input type="hidden" name="response_status" value="${escape(initialStatus)}"></div>
+ const fields=`<label class="public-name-field"><span class="field-label">${escape(t.name_label||ptr(e,'Qual é o seu nome?','What is your name?'))}</span><input name="name" type="text" value="${escape(primaryName)}" required aria-required="true" autocomplete="name" placeholder="${ptr(e,'Digite seu nome completo','Enter your full name')}"></label>`+
+  `<div class="rsvp-question public-attendance-choice"><div class="rsvp-choice-grid" id="attendance-choice"><button type="button" data-attendance="yes">${escape(t.yes_button||ptr(e,'Sim, estarei presente','Yes, I will attend'))}</button><button type="button" data-attendance="no">${escape(t.no_button||ptr(e,'Não poderei ir','I cannot attend'))}</button></div><input type="hidden" name="response_status" value="${escape(initialStatus)}"></div>
    <div id="decline-hint" class="decline-hint" hidden>${escape(t.decline_hint||'')}</div>
    <div id="attending-section" hidden>${companionGate}</div>`+publicOptionalFields(e,guest||{});
  app.innerHTML=publicFrame(e,`<p class="rsvp-welcome">${escape(e.welcome_message||t.intro)}</p>${form('public-rsvp',fields,ptr(e,'Enviar confirmação','Submit RSVP'))}`);applyAppearance(e.appearance,e.brand);
