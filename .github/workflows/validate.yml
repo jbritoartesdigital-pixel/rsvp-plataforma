@@ -51,7 +51,7 @@ jobs:
           WRANGLER_SEND_METRICS: "false"
 
       - name: Instalar Playwright para smoke local
-        run: npm install --no-save playwright@1.55.0
+        run: pnpm add -D playwright@1.55.0
 
       - name: Browser smoke em Chrome
         run: BROWSER_CHANNEL=chrome node tests/browser-smoke.mjs
