@@ -7,9 +7,12 @@ const tenantMutationOrigin=(origin,path,env)=>{
  if(origin===env.APP_ORIGIN)return true;
  if(!/^\/api\/(public|cliente)\//.test(path))return false;
  try{
-  const u=new URL(origin),suffix='.presencaconfirmada.com.br';
-  if(u.protocol!=='https:'||!u.hostname.endsWith(suffix))return false;
-  const sub=u.hostname.slice(0,-suffix.length);
+  const u=new URL(origin),host=u.hostname.toLowerCase(),hmlSuffix='.hml.presencaconfirmada.com.br',prodSuffix='.presencaconfirmada.com.br';
+  if(u.protocol!=='https:')return false;
+  let sub='';
+  if(host.endsWith(hmlSuffix))sub=host.slice(0,-hmlSuffix.length);
+  else if(host.endsWith(prodSuffix))sub=host.slice(0,-prodSuffix.length);
+  else return false;
   return !!sub&&!['app','hml','www'].includes(sub)&&!sub.includes('.');
  }catch{return false;}
 };
