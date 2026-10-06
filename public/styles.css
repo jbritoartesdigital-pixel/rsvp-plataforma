@@ -1186,3 +1186,11 @@ body.modal-open{overflow:hidden}
  .rsvp-choice-grid,.companion-actions{grid-template-columns:1fr}
  .appearance-sticky-preview{order:-1}
 }
+
+.client-tab-panel.is-hidden{display:none!important}
+.client-event-tabs{margin-bottom:16px}
+.client-overview-note{margin-top:12px}
+@media(min-width:900px){
+ .client-settings-grid{display:block}
+ .client-tab-panel:not(.is-hidden)>.card{max-width:880px}
+}
