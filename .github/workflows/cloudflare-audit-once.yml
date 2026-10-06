@@ -1,9 +1,9 @@
-name: Auditar Cloudflare uma vez
+name: Auditar DNS público uma vez
 
 on:
   push:
     branches: [main]
-    paths: [docs/CLOUDFLARE_AUDIT_NOW]
+    paths: [docs/DNS_AUDIT_NOW]
 
 permissions:
   contents: write
@@ -11,29 +11,28 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-latest
-    environment: commercial
     steps:
       - uses: actions/checkout@v4
 
-      - name: Consultar DNS e Worker routes sem alterar nada
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Consultar resolução pública sem alterar DNS
         run: |
           set -euo pipefail
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
-          zone_json="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones?name=presencaconfirmada.com.br&status=active")"
-          zone_id="$(printf '%s' "$zone_json" | jq -r '.result[0].id // empty')"
-          test -n "$zone_id"
+          random_host="slug-audit-20261005.presencaconfirmada.com.br"
+          hml_a="$(dig +short hml.presencaconfirmada.com.br A | paste -sd, -)"
+          hml_aaaa="$(dig +short hml.presencaconfirmada.com.br AAAA | paste -sd, -)"
+          wildcard_a="$(dig +short "$random_host" A | paste -sd, -)"
+          wildcard_aaaa="$(dig +short "$random_host" AAAA | paste -sd, -)"
+          hml_code="$(curl -L -sS -o /tmp/hml.html -w '%{http_code}' --max-time 15 https://hml.presencaconfirmada.com.br/ || true)"
+          wildcard_code="$(curl -L -sS -o /tmp/wildcard.html -w '%{http_code}' --max-time 15 "https://$random_host/" || true)"
+          hml_title="$(grep -oi '<title>[^<]*' /tmp/hml.html 2>/dev/null | head -1 | sed 's/<title>//I' || true)"
+          wildcard_title="$(grep -oi '<title>[^<]*' /tmp/wildcard.html 2>/dev/null | head -1 | sed 's/<title>//I' || true)"
 
-          dns_json="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/dns_records?per_page=100")"
-          routes_json="$(curl -fsS "${auth[@]}" "https://api.cloudflare.com/client/v4/zones/$zone_id/workers/routes")"
+          jq -n             --arg checked_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"             --arg random_host "$random_host"             --arg hml_a "$hml_a" --arg hml_aaaa "$hml_aaaa"             --arg wildcard_a "$wildcard_a" --arg wildcard_aaaa "$wildcard_aaaa"             --arg hml_code "$hml_code" --arg wildcard_code "$wildcard_code"             --arg hml_title "$hml_title" --arg wildcard_title "$wildcard_title"             '{checked_at:$checked_at,random_host:$random_host,hml:{a:$hml_a,aaaa:$hml_aaaa,http_code:$hml_code,title:$hml_title},wildcard:{a:$wildcard_a,aaaa:$wildcard_aaaa,http_code:$wildcard_code,title:$wildcard_title}}'             > docs/cloudflare-audit-result.json
 
-          jq -n             --arg checked_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"             --arg zone_id "$zone_id"             --argjson dns "$(printf '%s' "$dns_json" | jq '[.result[] | select(.name=="*.presencaconfirmada.com.br" or .name=="hml.presencaconfirmada.com.br" or .name=="app.presencaconfirmada.com.br") | {id,type,name,content,proxied,ttl}]')"             --argjson routes "$(printf '%s' "$routes_json" | jq '[.result[] | {id,pattern,script}]')"             '{checked_at:$checked_at,zone_id:$zone_id,dns:$dns,routes:$routes}'             > docs/cloudflare-audit-result.json
-
-      - name: Registrar resultado sanitizado
+      - name: Registrar resultado
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/cloudflare-audit-result.json
-          git commit -m "ci: record Cloudflare audit result" || exit 0
+          git commit -m "ci: record public DNS audit result" || exit 0
           git push
