@@ -1,4 +1,4 @@
-name: Hotfix: restaurar abertura da plataforma RSVP
+name: Hotfix restaurar plataforma RSVP
 on:
   pull_request:
     paths:
