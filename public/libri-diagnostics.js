@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const APP = "Presença Confirmada";
-  const HOST_SELECTOR = "body[data-shell='app']>header nav";
+  const HOST_SELECTOR = "body[data-shell='app']>header";
   const GATE_SELECTOR = ".admin-nav-wrap";
   const BEFORE_SELECTOR = "";
   const isAdminPath = () => /^\/admin(?:\/conta)?\/?$/.test(location.pathname);
