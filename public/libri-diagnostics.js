@@ -56,19 +56,25 @@
 
   // Monitoramento passivo: não modifica argumentos, respostas, cabeçalhos nem corpo da API.
   const originalFetch = window.fetch;
-  window.fetch = function (...args) {
-    const watched = isAdminPath() && !!document.querySelector(GATE_SELECTOR);
-    const route = watched ? safeRoute(args[0]) : '';
-    const method = String(args[1]?.method || args[0]?.method || 'GET').toUpperCase();
-    return originalFetch.apply(this, args).then(response => {
-      if (watched && response.status >= 400 && response.status !== 401 && response.status !== 403)
-        record({type:'HTTP',route:args[0],method,status:response.status});
-      return response;
-    }, error => {
-      if (watched) record({type:'REDE',route:args[0],method});
-      throw error;
-    });
-  };
+  let hookInstalled = false;
+  function installAdminHook() {
+    if (hookInstalled) return;
+    hookInstalled = true;
+    window.fetch = function (...args) {
+      // Fora do Admin autenticado, mantém a chamada original intacta.
+      if (!isAdminPath() || !document.querySelector(GATE_SELECTOR))
+        return originalFetch.apply(window, args);
+      const method = String(args[1]?.method || args[0]?.method || 'GET').toUpperCase();
+      return originalFetch.apply(window, args).then(response => {
+        if (response.status >= 400 && response.status !== 401 && response.status !== 403)
+          record({type:'HTTP',route:args[0],method,status:response.status});
+        return response;
+      }, error => {
+        record({type:'REDE',route:args[0],method});
+        throw error;
+      });
+    };
+  }
 
   let dialog;
   function makeDialog() {
@@ -121,7 +127,9 @@
       return;
     }
     const host = document.querySelector(HOST_SELECTOR);
-    if (!host || host.querySelector('.libri-bug-trigger')) return;
+    if (!host) return;
+    installAdminHook();
+    if (host.querySelector('.libri-bug-trigger')) return;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'libri-bug-trigger';
