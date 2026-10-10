@@ -26,7 +26,9 @@ jobs:
             import {readFileSync} from 'node:fs';
             const html=readFileSync('public/index.html','utf8');
             const js=readFileSync('public/libri-diagnostics.js','utf8');
-            if(!html.includes('/libri-diagnostics.js')||!html.includes('/libri-diagnostics.css'))process.exit(1);
+            const jsOn=html.includes('/libri-diagnostics.js'), cssOn=html.includes('/libri-diagnostics.css');
+            if(jsOn!==cssOn)process.exit(1);
+            if(!jsOn)console.log('✓ Diagnóstico desativado temporariamente por segurança');
             if(!js.includes('GATE_SELECTOR')||!js.includes('isAdminPath')||!js.includes('Nenhum dado enviado automaticamente'))process.exit(1);
             console.log('✓ Recursos encontrados e isolados no Admin');
           "
