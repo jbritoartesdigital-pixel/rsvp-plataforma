@@ -86,13 +86,43 @@
       '<button class="libri-bug-close" type="button" aria-label="Fechar">×</button></header>' +
       '<div class="libri-bug-main"><textarea readonly aria-label="Relatório de diagnóstico"></textarea>' +
       '<p class="libri-bug-feedback" aria-live="polite"></p></div>' +
-      '<footer class="libri-bug-footer"><button class="libri-bug-copy" type="button">Copiar relatório</button>' +
+      '<footer class="libri-bug-footer"><button class="libri-bug-send" type="button">Enviar ao ChatGPT</button>' +
+      '<button class="libri-bug-copy" type="button">Copiar relatório</button>' +
       '<button class="libri-bug-close-footer" type="button">Fechar</button></footer>';
     document.body.appendChild(dialog);
     const close = () => dialog.close();
     dialog.querySelector('.libri-bug-close').addEventListener('click', close);
     dialog.querySelector('.libri-bug-close-footer').addEventListener('click', close);
     dialog.addEventListener('click', e => { if (e.target === dialog) close(); });
+    // Compartilhamento é uma ação explícita: não usa APIs, tokens ou uploads automáticos.
+    dialog.querySelector('.libri-bug-send').addEventListener('click', async () => {
+      const field = dialog.querySelector('textarea');
+      const feedback = dialog.querySelector('.libri-bug-feedback');
+      const report = field.value;
+      // Android/iOS: o usuário pode escolher o ChatGPT no menu do sistema, quando oferecido.
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({title: APP + ' | Diagnóstico', text: report});
+          feedback.textContent = 'Relatório compartilhado pelo aplicativo escolhido.';
+          return;
+        } catch (error) {
+          if (error?.name === 'AbortError') {
+            feedback.textContent = 'Compartilhamento cancelado.';
+            return;
+          }
+          // Navegador não aceita compartilhar texto: usar cópia + abrir ChatGPT.
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(report);
+        feedback.textContent = 'Relatório copiado! Abra o ChatGPT e cole nesta conversa.';
+        window.open('https://chatgpt.com/', '_blank', 'noopener,noreferrer');
+      } catch {
+        feedback.textContent = 'Não foi possível copiar automaticamente. Selecione o relatório, copie e abra o ChatGPT.';
+        field.focus();
+        field.select();
+      }
+    });
     dialog.querySelector('.libri-bug-copy').addEventListener('click', async () => {
       const text = dialog.querySelector('textarea');
       const feedback = dialog.querySelector('.libri-bug-feedback');
