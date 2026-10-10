@@ -1,0 +1,38 @@
+name: Validar diagnóstico sem publicar
+on:
+  pull_request:
+    paths:
+      - 'public/libri-diagnostics.js'
+      - 'public/libri-diagnostics.css'
+      - 'public/index.html'
+      - '.github/workflows/validar-diagnostico.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Sintaxe JavaScript
+        run: node --check public/libri-diagnostics.js
+      - name: Conferir script e estilo conectados
+        run: |
+          node --input-type=module -e "
+            import {readFileSync} from 'node:fs';
+            const html=readFileSync('public/index.html','utf8');
+            const js=readFileSync('public/libri-diagnostics.js','utf8');
+            if(!html.includes('/libri-diagnostics.js')||!html.includes('/libri-diagnostics.css'))process.exit(1);
+            if(!js.includes('GATE_SELECTOR')||!js.includes('isAdminPath')||!js.includes('Nenhum dado enviado automaticamente'))process.exit(1);
+            console.log('✓ Recursos encontrados e isolados no Admin');
+          "
+      - name: Instalar dependências
+        run: corepack enable && corepack prepare pnpm@11.19.0 --activate && pnpm install --frozen-lockfile
+      - name: Validar aplicação
+        run: |
+          pnpm run validate
+
