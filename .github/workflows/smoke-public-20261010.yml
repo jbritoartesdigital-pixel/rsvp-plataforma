@@ -20,3 +20,38 @@ jobs:
             head -c 105 /tmp/httpcheck | tr '\n' ' '
             echo
           done
+
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.19.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Instalar Chrome automation
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm add -D playwright@1.55.0
+      - name: Abrir site de verdade em navegador Chrome mobile
+        run: |
+          node --input-type=module <<'NODE'
+          import {chromium} from 'playwright';
+          const b=await chromium.launch({headless:true,channel:'chrome'});
+          let broken=false;
+          try{
+            for (const path of ['/','/app/login','/admin']) {
+              const ctx=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+              const p=await ctx.newPage();
+              const errs=[];
+              p.on('pageerror',err=>errs.push(err.message.slice(0,220)));
+              const r=await p.goto('https://app.presencaconfirmada.com.br'+path,{waitUntil:'domcontentloaded',timeout:20000});
+              await p.waitForTimeout(2800);
+              const result=await p.evaluate(()=>({url:location.pathname,text:document.querySelector('#app')?.innerText.slice(0,280),title:document.title}));
+              console.log(JSON.stringify({path,status:r.status(),...result,errs}));
+              if(!r.ok()||errs.length||result.text?.includes('Carregando…')) broken=true;
+              await ctx.close();
+            }
+          }finally{await b.close()}
+          if(broken)process.exit(1);
+          NODE
