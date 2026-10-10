@@ -1,3 +1,4 @@
+import {initAdminDiagnostics, recordAdminApiFailure} from './admin-diagnostics.js';
 import {startRegistration,startAuthentication} from '@simplewebauthn/browser';
 import QRCode from 'qrcode';
 const app=document.querySelector('#app');
@@ -20,8 +21,12 @@ const select=(name,label,items,value)=>`<label><span class="field-label">${label
 const form=(id,content,button)=>`<form id="${id}" class="form" novalidate><div class="form-alert" role="alert" hidden></div>${content}${/\srequired(?:\s|=|>)/.test(content)?'<p class="required-note"><span>*</span> Campos obrigatórios</p>':''}<button>${button}</button></form>`;
 const notice=message=>{const el=document.querySelector('#notice');el.textContent=message;el.style.display='block';setTimeout(()=>el.style.display='none',6000);};
 const api=async(path,method='GET',data)=>{
- const r=await fetch(path,{method,headers:data?{'content-type':'application/json'}:{},...(data?{body:JSON.stringify(data)}:{})});
- const b=await r.json();if(!r.ok) throw Error(b.error||'Não foi possível concluir.');return b;
+ let r;
+ try {r=await fetch(path,{method,headers:data?{'content-type':'application/json'}:{},...(data?{body:JSON.stringify(data)}:{})});}
+ catch(error){recordAdminApiFailure(path,method,0);throw error;}
+ const b=await r.json();
+ if(!r.ok){recordAdminApiFailure(path,method,r.status);throw Error(b.error||'Não foi possível concluir.');}
+ return b;
 };
 function submit(id,fn) {
  document.querySelector(`#${id}`)?.addEventListener('submit',async e=>{
@@ -1199,6 +1204,8 @@ async function main(){
  applyStudioBrand();
  const pureAdmin=user.role==='super_admin'&&!user.impersonated_studio_id;
  setLogoHome(pureAdmin?'/admin':'/app');
+ // Só toca no DOM após o servidor confirmar a sessão administrativa.
+ if(pureAdmin && (path==='/admin'||path==='/admin/conta'))initAdminDiagnostics();
  if(pureAdmin&&!['/admin','/admin/conta'].includes(path)){goto('/admin',{replace:true});return;}
  if(path==='/admin')return adminPage();
  if(path==='/admin/conta')return account(true);
