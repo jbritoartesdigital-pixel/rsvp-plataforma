@@ -65,6 +65,7 @@
   border-radius: 10px; background: white; color: #42343b;
   font: 600 13px system-ui,sans-serif; cursor: pointer;
 }
+.libri-bug-footer .libri-bug-send { background: #705562; color: #fff; border-color: #705562; }
 .libri-bug-footer .libri-bug-copy { background: #f5e9ed; border-color: #eddde4; }
 @media (max-width: 400px) {
   .libri-bug-footer, .libri-bug-dialog header { padding-inline: 12px; }
