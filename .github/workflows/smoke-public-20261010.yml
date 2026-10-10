@@ -1,0 +1,22 @@
+name: Verificar acessibilidade pública (diagnóstico)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/smoke-public-20261010.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Consultar domínios sem login e sem alterações
+        run: |
+          set +e
+          for url in "https://app.presencaconfirmada.com.br/" "https://app.presencaconfirmada.com.br/app/login" "https://app.presencaconfirmada.com.br/vendor/app.js" "https://app.presencaconfirmada.com.br/libri-diagnostics.js?v=1" "https://app.presencaconfirmada.com.br/api/plans" "https://pedidos.libriconvites.com.br/admin-v2" "https://confirmacao.libriconvites.com.br/admin" "https://momentos.libriconvites.com.br/admin" "https://presentes.libriconvites.com.br/admin"; do
+            echo "==> ${url}"
+            curl --silent --show-error --location --max-time 12 --output /tmp/httpcheck --write-out "code=%{http_code} bytes=%{size_download} content_type=%{content_type} url=%{url_effective}\n" "${url}"
+            head -c 105 /tmp/httpcheck | tr '\n' ' '
+            echo
+          done
